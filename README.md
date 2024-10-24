@@ -1,6 +1,3 @@
-> [!NOTE]
-> This library is still under development no releases yet. Changes and updates will be made.
-
 # JSBinder
 **A lightweight JavaScript library to make your DOM data-driven in the most simple way.**
 
@@ -31,7 +28,7 @@ const binder = new JSBinder(options);
 
 Supported parameters are:
 - **root**: DOM pointer to the element `binder.scan()` starts from. Default `document`.
-- **prefix**: A prefix can be added to be able to use multiple instances of JSBinder or to avoid confilcts with other libraries. `prefix: 'xyz'` will change the attributes to `<div data-xyz-bind='...'></div>` etc.
+- **prefix**: A prefix can be added to be able to use multiple instances of JSBinder or to avoid conflicts with other libraries. `prefix: 'xyz'` will change the attributes to `<div data-xyz-bind='...'></div>` etc.
 
 
 ## State
@@ -283,7 +280,7 @@ Expressions can besides accessing the state handle the following standard JavaSc
 # Functions
 
 `binder.addFunction(functionname, (x) => {})` can be added to extend functionallity in the expression evaluator.<br />
-Function is used in expression with `#functionname(...)`.
+Function is used in expressions with `#functionname(...)`.
 
 `binder.addFunction("round", (x) => Math.round(x));` and `<span data-bind="#round(5.55)"></span>` reslults in `<span>6</span>`.
 
@@ -296,7 +293,7 @@ document.body.addEventListener("jsbinder-bind", (e) => console.log("Bind event o
 ```
 
 
-# Advanced examples
+# Examples
 
 ## Table with filter
 [demo](demo-table-with-filter.html)
