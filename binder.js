@@ -255,13 +255,14 @@ class JSBinder
                     ["!",  (x) => !x],
                 ]);
 
-            // ["~", 010101x2] >> [101010x2]
+            // ["~", 0b010101] >> [0b101010]
             const handleBitwiseNot = (data) => 
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
                     ["~", (x) => ~x],
                 ]);
 
-            // ToDo: examples...
+            // [0b00010, "<<", 1] >> [0b00100]  /  [2, "<<", 1] >> [4]
+            // [0b00010, ">>", 1] >> [0b00100]  /  [2, ">>", 1] >> [1]
             const handleShift = (data) =>
                 JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
                     ["<<",  (x, y) => x <<  y], //Shift left
