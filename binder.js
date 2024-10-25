@@ -255,7 +255,7 @@ class JSBinder
                     ["!",  (x) => !x],
                 ]);
 
-            // ["~", 0b010101] >> [0b101010]
+            // ["~", 0b010101] >> [0b11111111111111111111111111101010] (-22 in 32bits)
             const handleBitwiseNot = (data) => 
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
                     ["~", (x) => ~x],

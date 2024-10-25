@@ -181,7 +181,7 @@ Filter list by adding a `data-where="expression"` and/or limit to a subrange by 
 
 *Where, skip and limit can be used independently.*
 
-`data-where="@panelt.type == 'Ice'"` will result in a list containing '**Uranus**' and '**Neptune**'.
+`data-where="@planet.type == 'Ice'"` will result in a list containing '**Uranus**' and '**Neptune**'.
 
 `data-skip="2" data-limit="3"` will result in a list containing '**Venus**', '**Earth**' and '**Mars**'.
 
