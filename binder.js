@@ -554,14 +554,16 @@ class JSBinder
 
                 //Create list of all idexes to include, filtered by 'where' if defined.
                 let indexes = [];
-                binder.#get(item.list).forEach((x, index) =>
-                {
-                    const valid = item.where !== null
-                        ? (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate()
-                        : true;
 
-                    if (valid) indexes.push(index);
-                });
+                const source = binder.#get(item.list);
+                if (Array.isArray(source))
+                {
+                    source.forEach((x, index) =>
+                    {
+                        const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate();
+                        if (valid) indexes.push(index);
+                    });
+                }
 
                 //Reduce list of indexes if 'skip' or 'limit' is defined
                 if (skip !== null) indexes = indexes.slice(skip);
@@ -611,12 +613,8 @@ class JSBinder
                     if (keysToAdd.includes(key))
                     {
                         obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[{${key}}]`));
-    
                         lastObj.after(obj);
-                        lastObj = obj;
-
                         JSBinder.#dispatchEvent(obj, "each", { action: "add" });
-
                         counter++;
                     }
                     //Reorder existing items if needed
@@ -718,10 +716,7 @@ class JSBinder
                 let newKeys = [];
                 for (let key = from; key <= to; key++)
                 {
-                    const valid = item.where !== null
-                        ? (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), key))).evaluate()
-                        : true;
-                    
+                    const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), key))).evaluate();
                     if (valid) newKeys.push(key);
                 }
 
@@ -756,11 +751,8 @@ class JSBinder
                     if (keysToAdd.includes(key))
                     {
                         obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp(item.alias + "\\b", "g"), key));
-    
                         lastObj.after(obj);
-    
                         JSBinder.#dispatchEvent(obj, "for", { action: "add" });
-
                         counter++;
                     }
                     //Existing items...
