@@ -260,7 +260,7 @@ Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = proper
 See [Recursive tree](#recursive-tree) for an example.
 
 **Events**<br />
-Render triggers the [event](#Events) `jsbinder-render` with `e.detail.source = source`.
+Render triggers the [event](#Events) `jsbinder-render`.
 
 
 # Expressions

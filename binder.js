@@ -1041,7 +1041,7 @@ class JSBinder
     // </template>
     // <ul data-render="tree" data-source="tree"></ul>
     //
-    // event: jsbinder-render with e.detail.souce = datasource.
+    // event: jsbinder-render.
     #templates = ((binder) => new class
     {
         #items = {};
@@ -1087,8 +1087,8 @@ class JSBinder
                     return;
                 }
 
-                obj.innerHTML = template.replace(new RegExp("@data" + "\\b", "g"), source);;
-                JSBinder.#dispatchEvent(obj, "render", { source: binder.#get(source) });
+                obj.innerHTML = template.replace(new RegExp("@data" + "\\b", "g"), source);
+                JSBinder.#dispatchEvent(obj, "render");
                 counter++;
             });
             
