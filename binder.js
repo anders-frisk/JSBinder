@@ -399,13 +399,14 @@ class JSBinder
 
     #findDirectives = (directive, callback) =>
     {
-        const [$if, $each, $for] = this.#mapAttributes("if", "each", "for");
+        const [$if, $each, $for, $template] = this.#mapAttributes("if", "each", "for", "template");
 
         const isMounted = (obj) => document.body.contains(obj);
-        const hasParent = (obj, selector) => !!obj.parentNode.closest(selector);
+        const hasParent = (obj, ...selectors) => selectors.some(x => !!obj.parentNode.closest(x));
 
         [...this.#settings.root.querySelectorAll(`[data-${directive}]`)]
-            .filter((obj) => isMounted(obj) && !hasParent(obj, `[data-${$if}]`) && !hasParent(obj, `[data-${$each}]`) && !hasParent(obj, `[data-${$for}]`))
+            .filter((obj) => isMounted(obj))
+            .filter((obj) => !hasParent(obj, `[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template[data-${$template}]`))
             .forEach((obj) => callback(obj));
     };
 
@@ -1041,7 +1042,7 @@ class JSBinder
     // </template>
     // <ul data-render="tree" data-source="tree"></ul>
     //
-    // event: jsbinder-render with e.detail.souce = datasource.
+    // event: jsbinder-render.
     #templates = ((binder) => new class
     {
         #items = {};
@@ -1050,8 +1051,8 @@ class JSBinder
         scan = () =>
         {
             const $template = binder.#mapAttributes("template");
-            
-            [...binder.#settings.root.querySelectorAll(`template[data-${$template}]`)].forEach((obj) =>
+
+            binder.#findDirectives($template, (obj) =>
             {
                 const key = JSBinder.#pop(obj, $template);
                 const html = JSBinder.#cleanHTML(obj.innerHTML);
@@ -1087,8 +1088,8 @@ class JSBinder
                     return;
                 }
 
-                obj.innerHTML = template.replace(new RegExp("@data" + "\\b", "g"), source);;
-                JSBinder.#dispatchEvent(obj, "render", { source: binder.#get(source) });
+                obj.innerHTML = template.replace(new RegExp("@data" + "\\b", "g"), source);
+                JSBinder.#dispatchEvent(obj, "render");
                 counter++;
             });
             
