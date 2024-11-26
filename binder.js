@@ -399,14 +399,13 @@ class JSBinder
 
     #findDirectives = (directive, callback) =>
     {
-        const [$if, $each, $for, $template] = this.#mapAttributes("if", "each", "for", "template");
+        const [$if, $each, $for] = this.#mapAttributes("if", "each", "for");
 
-        const isMounted = (obj) => document.body.contains(obj);
-        const hasParent = (obj, ...selectors) => selectors.some(x => !!obj.parentNode.closest(x));
+        const hasAnyParent = (obj, ...selectors) => selectors.some(x => !!obj.parentNode.closest(x));
 
         [...this.#settings.root.querySelectorAll(`[data-${directive}]`)]
-            .filter((obj) => isMounted(obj))
-            .filter((obj) => !hasParent(obj, `[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template[data-${$template}]`))
+            .filter((obj) => document.body.contains(obj))
+            .filter((obj) => !hasAnyParent(obj, `[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`))
             .forEach((obj) => callback(obj));
     };
 
@@ -1052,7 +1051,7 @@ class JSBinder
         {
             const $template = binder.#mapAttributes("template");
 
-            binder.#findDirectives($template, (obj) =>
+            [...binder.#settings.root.querySelectorAll(`template[data-${$template}]`)].forEach((obj) =>
             {
                 const key = JSBinder.#pop(obj, $template);
                 const html = JSBinder.#cleanHTML(obj.innerHTML);
