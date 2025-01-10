@@ -11,14 +11,11 @@ class JSBinder
         const defaults = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000 };
         this.#settings = {...defaults, ...options};
 
-        this.#highFrequencyTimer = window.setInterval(() => { this.#highFrequencyController(); }, this.#settings.highFrequencyInterval);
-        this.#lowFrequencyTimer = window.setInterval(() => { this.#lowFrequencyController(); }, this.#settings.lowFrequencyInterval);
+        this.#highFrequencyController.start(this.#settings.highFrequencyInterval);
+        this.#lowFrequencyController.start(this.#settings.lowFrequencyInterval);
     };
 
     #settings;
-
-    #highFrequencyTimer = null;
-    #lowFrequencyTimer = null;
 
     #indexMap = new Map();
 
@@ -117,7 +114,7 @@ class JSBinder
             this.#tree = JSBinder.#ExpressionTree.#buildTree(exp);
         };
 
-        // Operators (in order of operator precedence).
+        // Operators
         static #ops =
         {
             ternary     : ["?", ":"],
@@ -401,11 +398,9 @@ class JSBinder
     {
         const [$if, $each, $for] = this.#mapAttributes("if", "each", "for");
 
-        const hasAnyParent = (obj, ...selectors) => selectors.some(x => !!obj.parentNode.closest(x));
-
         [...this.#settings.root.querySelectorAll(`[data-${directive}]`)]
             .filter((obj) => document.body.contains(obj))
-            .filter((obj) => !hasAnyParent(obj, `[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`))
+            .filter((obj) => ![`[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`].some(x => !!obj.parentNode.closest(x)))
             .forEach((obj) => callback(obj));
     };
 
@@ -1102,25 +1097,29 @@ class JSBinder
     #scanning = false;
     #updating = false;
 
-    #highFrequencyController = () =>
+    // let timed = new JSBinder.#Interval(() => { ... });
+    // timed.start(1000); / timed.stop();
+    static #Interval = class { #timer = null; #handler = () => {}; constructor (handler) { this.#handler = handler; }; start = (interval) => { this.#timer = window.setInterval(this.#handler, interval); }; stop = () => { window.clearInterval(this.#timer); }; };
+
+    #highFrequencyController = new JSBinder.#Interval(() =>
     {
         if (!this.#scanning && !this.#updating && this.#scanRequest) this.#scan();
         if (!this.#scanning && !this.#updating && this.#updateRequest) this.#update();
-    };
+    });
 
-    #lowFrequencyController = () =>
+    #lowFrequencyController = new JSBinder.#Interval(() =>
     {
         if (this.#settings.root !== document && document.contains(this.#settings.root) === false)
         {
-            window.clearInterval(this.#highFrequencyTimer);
-            window.clearInterval(this.#lowFrequencyTimer);
+            this.#highFrequencyController.stop();
+            this.#lowFrequencyController.stop();
             JSBinder.#info("Instance stopped!");
         } 
-    };
+    });
 
     #directives = [this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective];
 
-    #scan = () =>
+    #scan = () => 
     {
         this.#scanRequest = false;
         this.#scanning = true;
