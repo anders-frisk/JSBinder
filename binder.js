@@ -26,16 +26,16 @@ class JSBinder
     // myJSBinder.setState({ list: ["A", "B"], title: "Abcde" });
     // Object must not be fully defined each time. Update is adds/modifies specified members.
     // Setting a member to 'undefined' removes it from state.
-    setState = (newState) => {
-        if (!JSBinder.#isPlainObject(newState))
-            return JSBinder.#error(`setState requires an object as new state.`);
+    setState = (data) => {
+        if (!JSBinder.#isPlainObject(data))
+            return JSBinder.#error(`setState requires an object as input.`);
 
-        const recurse = (oldState, newState) => {
-            Object.keys(newState).forEach((key) => { if (newState[key] === undefined) { delete oldState[key]; } else { oldState[key] = JSBinder.#isPlainObject(newState[key]) ? recurse(oldState[key] || {}, newState[key]) : newState[key]; } });
-            return oldState;
+        const recurse = (state, updates) => {
+            Object.keys(updates).forEach((key) => { if (updates[key] === undefined) { delete state[key]; } else { state[key] = JSBinder.#isPlainObject(updates[key]) ? recurse(state[key] || {}, updates[key]) : updates[key]; } });
+            return state;
         };
 
-        this.#state = recurse(this.#state, newState);
+        this.#state = recurse(this.#state, data);
         this.#updateRequest = true;
     };
 
@@ -81,8 +81,7 @@ class JSBinder
         return this.#createPath(exp).reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
     };
 
-    static #ExpressionTree = class
-    {
+    static #ExpressionTree = class {
         #binder;
         #tree;
 
@@ -294,7 +293,7 @@ class JSBinder
     };
  
     static #rgx = {
-        var: "@[a-zA-Z]{1}[0-9a-zA-Z_]*",
+        var: "[a-zA-Z]{1}[0-9a-zA-Z_]*",
         class: "[a-zA-Z]{1}[0-9a-zA-Z_-]*",
         attr: "[a-zA-Z]{1}[0-9a-zA-Z_-]*",
         exp: ".+",
@@ -371,8 +370,7 @@ class JSBinder
     // data.visible = false >> <div data-if="data.visible == true">a</div> >> <!-- if -->
     //
     // event: jsbinder-if with e.detail.action = "add" / "remove".
-    #ifDirective = ((binder) => new class
-    {
+    #ifDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
 
@@ -423,8 +421,7 @@ class JSBinder
     // ToDo: skip + limit
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
-    #eachDirective = ((binder) => new class
-    {
+    #eachDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.start)); };
 
@@ -441,7 +438,7 @@ class JSBinder
                 if (key === null)
                     return JSBinder.#error("'each' must have 'key' expression defined.");
 
-                const m = expression.match(new RegExp("^" + `(${JSBinder.#rgx.var})` + "\\s+" + "in" + "\\s+" + "([\\S]+)" + "$"));
+                const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgx.var})` + "\\s+" + "in" + "\\s+" + "([\\S]+)" + "$"));
 
                 if (!m)
                     return JSBinder.#error(`incorrect 'each' expression: ${expression}`);
@@ -482,7 +479,7 @@ class JSBinder
                 const source = binder.#get(item.list);
                 if (Array.isArray(source)) {
                     source.forEach((x, index) => {
-                        const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate();
+                        const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate();
                         if (valid) indexes.push(index);
                     });
                 }
@@ -494,7 +491,7 @@ class JSBinder
                 //Calculate keys for each index.
                 let newKeys = [];
                 indexes.forEach((index) => {
-                    const key = (new JSBinder.#ExpressionTree(binder, item.key.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate()
+                    const key = (new JSBinder.#ExpressionTree(binder, item.key.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate()
                         .toString()
                         .replace(new RegExp("[^a-zA-Z0-9]", "g"), "_");
 
@@ -529,7 +526,7 @@ class JSBinder
     
                     if (keysToAdd.includes(key)) {
                         //Add new item
-                        obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp(item.alias + "\\b", "g"), `${item.list}[{${key}}]`));
+                        obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[{${key}}]`));
                         lastObj.after(obj);
                         JSBinder.#dispatchEvent(obj, "each", { action: "add" });
                         counter++;
@@ -561,8 +558,7 @@ class JSBinder
     // ToDo: data-where
     //
     // event: jsbinder-for with e.detail.action = "add" / "remove".
-    #forDirective = ((binder) => new class
-    {
+    #forDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.start)); };
 
@@ -579,7 +575,7 @@ class JSBinder
                 if (from === null || to === null)
                     return JSBinder.#error("'for' must have 'from' and 'to' expressions defined.");
 
-                const m = expression.match(new RegExp("^" + `(${JSBinder.#rgx.var})` + "$"));
+                const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgx.var})` + "$"));
 
                 if (!m)
                     return JSBinder.#error(`incorrect 'for' expression: ${expression}`);
@@ -614,7 +610,7 @@ class JSBinder
                 //Create list of all keys/numbers to include, filtered by 'where' if defined.
                 let newKeys = [];
                 for (let key = from; key <= to; key++) {
-                    const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp(item.alias + "\\b", "g"), key))).evaluate();
+                    const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp("@" + item.alias + "\\b", "g"), key))).evaluate();
                     if (valid) newKeys.push(key);
                 }
 
@@ -644,7 +640,7 @@ class JSBinder
     
                     if (keysToAdd.includes(key)) {
                         //Add new item
-                        obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp(item.alias + "\\b", "g"), key));
+                        obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp("@" + item.alias + "\\b", "g"), key));
                         lastObj.after(obj);
                         JSBinder.#dispatchEvent(obj, "for", { action: "add" });
                         counter++;
@@ -672,8 +668,7 @@ class JSBinder
     // <input/select data-bind="..." /> >> <input/select value="..." />
     //
     // event: jsbinder-bind with e.detail.value = value.
-    #bindDirective = ((binder) => new class
-    {
+    #bindDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
 
@@ -713,8 +708,7 @@ class JSBinder
     // data-attr="'disabled' : valid === true ? null : 'disabled'"
     //
     // event: jsbinder-attr  with e.detail.key = attribute key.
-    #attributeDirective = ((binder) => new class
-    {
+    #attributeDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
 
@@ -759,8 +753,7 @@ class JSBinder
     // data-class="'disabled" : data.enabled !== true || data.expired === true"
     //
     // event: jsbinder-class with e.detail.key = class name.
-    #classDirective = ((binder) => new class
-    {
+    #classDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
 
@@ -804,8 +797,7 @@ class JSBinder
     // data-style="'left' : data.x; 'top" : data.y"
     //
     // event: jsbinder-style with e.detail.key = css property.
-    #styleDirective = ((binder) => new class
-    {
+    #styleDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
 
@@ -855,8 +847,7 @@ class JSBinder
     // <ul data-render="tree" data-source="tree"></ul>
     //
     // event: jsbinder-render.
-    #templates = ((binder) => new class
-    {
+    #templates = ((binder) => new class {
         #items = {};
         
         // Find <template /> elements with data-template='templatekey' and stores to be used from elements with data-render='templatekey'.
@@ -890,7 +881,7 @@ class JSBinder
                 if (!source)
                     return JSBinder.#error(`'render' must have 'source' defined.`);
 
-                obj.innerHTML = template.replace(new RegExp("@data" + "\\b", "g"), source);
+                obj.innerHTML = template.replace(new RegExp("@" + "data" + "\\b", "g"), source);
                 JSBinder.#dispatchEvent(obj, "render");
                 counter++;
             });
@@ -921,17 +912,14 @@ class JSBinder
         } 
     });
 
-    #directives = [this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective];
-
     #scan = () => {
-        this.#templates.scan();
-        this.#directives.forEach(x => x.scan());
+        [this.#templates, this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective].forEach(x => x.scan());
         this.#update();
     };
 
     #update = () => {
         let count = 0;
-        this.#directives.forEach(x => count += x.update() ?? 0);
+        [this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective].forEach(x => count += x.update() ?? 0);
         if (count === 0) count += this.#templates.render();
         if (count > 0) this.#scan();
     };
