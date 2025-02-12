@@ -3,15 +3,15 @@ class JSBinder
     constructor(options = {})
     {
         if (!JSBinder.#isPlainObject(options))
-            return JSBinder.#error(`options must be an object.`);
+            return JSBinder.#error(`options must be an object`);
 
-        const defaults = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000 };
-        this.#settings = {...defaults, ...options};
+        this.#settings = {...JSBinder.#defaults, ...options};
 
         this.#highFrequencyController.start(this.#settings.highFrequencyInterval);
         this.#lowFrequencyController.start(this.#settings.lowFrequencyInterval);
     };
 
+    static #defaults = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000 };
     #settings;
 
     #indexMap = new Map();
@@ -28,7 +28,7 @@ class JSBinder
     // Setting a member to 'undefined' removes it from state.
     setState = (data) => {
         if (!JSBinder.#isPlainObject(data))
-            return JSBinder.#error(`setState requires an object as input.`);
+            return JSBinder.#error(`setState requires an object as input`);
 
         const recurse = (state, updates) => {
             Object.keys(updates).forEach((key) => { if (updates[key] === undefined) { delete state[key]; } else { state[key] = JSBinder.#isPlainObject(updates[key]) ? recurse(state[key] || {}, updates[key]) : updates[key]; } });
@@ -436,7 +436,7 @@ class JSBinder
                 const [start, end] = JSBinder.#replaceObject(obj, document.createComment("each"), document.createComment("/each"));
 
                 if (key === null)
-                    return JSBinder.#error("'each' must have 'key' expression defined.");
+                    return JSBinder.#error("'each' must have 'key' expression defined");
 
                 const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgx.var})` + "\\s+" + "in" + "\\s+" + "([\\S]+)" + "$"));
 
@@ -573,7 +573,7 @@ class JSBinder
                 const [start, end] = JSBinder.#replaceObject(obj, document.createComment("for"), document.createComment("/for"));
 
                 if (from === null || to === null)
-                    return JSBinder.#error("'for' must have 'from' and 'to' expressions defined.");
+                    return JSBinder.#error("'for' must have 'from' and 'to' expressions defined");
 
                 const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgx.var})` + "$"));
 
@@ -876,10 +876,10 @@ class JSBinder
                 const template = this.#items[key];
 
                 if (!template)
-                    return JSBinder.#error(`no template with key '${key}' found.`);
+                    return JSBinder.#error(`no template with key '${key}' found`);
 
                 if (!source)
-                    return JSBinder.#error(`'render' must have 'source' defined.`);
+                    return JSBinder.#error(`'render' must have 'source' defined`);
 
                 obj.innerHTML = template.replace(new RegExp("@" + "data" + "\\b", "g"), source);
                 JSBinder.#dispatchEvent(obj, "render");
