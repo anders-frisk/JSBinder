@@ -206,6 +206,14 @@ Result:
 <img src='earth.jpeg' title='Earth' />
 ```
 
+
+**Custom attribute implementations**
+
+```html
+<input data-disabled="data.valid === false" />
+```
+
+
 **Events**<br />
 Attribute triggers the [event](#Events) `jsbinder-attr` with `e.detail.key = attribute` and `e.detail.value = value`.
 
@@ -331,7 +339,7 @@ binder.setState({
 binder.addFunction("ceil", (x) => Math.ceil(x));
 binder.setState({
   planets,
-  page : 0,
+  page: 0,
   pagesize: 4,
 });
 ```

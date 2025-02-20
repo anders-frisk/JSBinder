@@ -144,10 +144,14 @@ class JSBinder
                 //Note: Currently "+1" is not handled...
                 // (...,) "-", "5", ... >> (...,) "-5", ...
                 const isNumeric = (x) => !!x.match(new RegExp("^-?\\d+\\.?\\d*$"));
-                for (let x = 0; x < output.length - 2; x++) {
+                for (let x = 0; x < output.length - 2; x++)
                     if (output[x] === "-" && isNumeric(output[x+1]) && (x === 0 || [...ops.math, ...ops.compare].includes(output[x-1]))) //...logic, ...bitwise ???
                         output.splice(x, 2,`-${output[x+1]}`);
-                }
+
+                // ..., "-", x, ... >> ..., +, [0, "-", x], ... (100-2+2 >> 100+(0-2)+2)
+                for (let x = 0; x < output.length - 1; x++)
+                    if (output[x] === "-")
+                        output.splice(x, 2, "+", ["0", "-", output[x+1]]);
 
                 // ..., unary_operator, operand, ... >> ..., [unary_operator, operand], ...
                 // ["false", "===", "!", "true"] >> ["false", "===", ["!", "true"]]
@@ -278,11 +282,14 @@ class JSBinder
                     ["??", (x, y) => x ?? y],
                 ]);
 
-                
+            const isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^#[a-zA-Z]{1}[0-9a-zA-Z]*$"));
+            const isOperator = (x) => JSBinder.#ExpressionTree.#allOps.includes(x);
+
             // Recursive parse tree nodes to values.
-            // ["'string'", vaiable_eq_1, "true", ...] >> ["string", 1, true, ...]
-            const toValues = (x) => !Array.isArray(x) && (x[0] !== "#") && !JSBinder.#ExpressionTree.#allOps.includes(x) ? this.#binder.#get(x) : x; //ToDo: Better way to detect functions? x[0] !== "#"
-            const resolveLiterals = (input) => input.map((x) => Array.isArray(x) ? resolveLiterals(x) : x).map(toValues);
+            // ["'string'", vaiable_eq_1, "true", ...] >> ["string", 1, true, ...]   
+            const resolveLiterals = (input) => input
+                .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
+                .map((x) => !Array.isArray(x) && !isFunction(x) && !isOperator(x) ? this.#binder.#get(x) : x);
             
             // Recursive solve tree.
             const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleShift, handleMath, handleCompare, handleBitwise, handleLogic, handleNullish];
@@ -415,10 +422,10 @@ class JSBinder
     })(this);
 
     // data-each="row in data"
-    // var data = ["a", "b", ...]       >> <div data-each="@item in data" data-key="@item" data-bind="@item" />                 >> <div>a</div><div>b</div>...
-    // var data = [{title: "a"}, ...]   >> <div data-each="@item in data" data-key="@item.title" data-bind="@item.title" />     >> <div>a</div>...
-    // ToDo: where
-    // ToDo: skip + limit
+    // var data = ["a", "b", ...]       >> <div data-each="@item in data" data-key="@item" data-bind="@item" />                                 >> <div>a</div><div>b</div>...
+    // var data = [{title: "a"}, ...]   >> <div data-each="@item in data" data-key="@item.title" data-bind="@item.title" />                     >> <div>a</div>...
+    // var data = [1,2,3,4,5, ...]      >> <div data-each="@number in data" data-key="@number" data-bind="@number" data-where="@number > 3" />  >> <div>4</div><div>5</div>...
+    // var data = [1,2,3,4,5, ...]      >> <div data-each="@number in data" data-key="@number" data-skip="1" data-limit="2" />                  >> <div>2</div><div>3</div>
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
     #eachDirective = ((binder) => new class {
@@ -479,7 +486,8 @@ class JSBinder
                 const source = binder.#get(item.list);
                 if (Array.isArray(source)) {
                     source.forEach((x, index) => {
-                        const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate();
+                        const whereExpression = item.where?.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`);
+                        const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, whereExpression)).evaluate();
                         if (valid) indexes.push(index);
                     });
                 }
@@ -491,7 +499,8 @@ class JSBinder
                 //Calculate keys for each index.
                 let newKeys = [];
                 indexes.forEach((index) => {
-                    const key = (new JSBinder.#ExpressionTree(binder, item.key.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`))).evaluate()
+                    const keyExpression = item.key.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[${index}]`);
+                    const key = (new JSBinder.#ExpressionTree(binder, keyExpression)).evaluate()
                         .toString()
                         .replace(new RegExp("[^a-zA-Z0-9]", "g"), "_");
 
@@ -554,8 +563,8 @@ class JSBinder
     })(this);
 
     // <p data-for="@index" data-from="0" data-to="myArray.length" data-bind="myArray[@index]" /> >> ...
-    // <p data-for="@counter" data-from="3" data-to="7" data-bind="@pageindex" /> >> <p>3</p><p>4</p>...<p>7</p>
-    // ToDo: data-where
+    // <p data-for="@number" data-from="3" data-to="7" data-bind="@number" /> >> <p>3</p><p>4</p>...<p>7</p>
+    // <p data-for="@number" data-from="1" data-to="7" data-where="@number % 2 == 0" data-bind="@number" /> >> <p>2</p><p>4</p><p>6</p>
     //
     // event: jsbinder-for with e.detail.action = "add" / "remove".
     #forDirective = ((binder) => new class {
@@ -610,7 +619,8 @@ class JSBinder
                 //Create list of all keys/numbers to include, filtered by 'where' if defined.
                 let newKeys = [];
                 for (let key = from; key <= to; key++) {
-                    const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, item.where.replace(new RegExp("@" + item.alias + "\\b", "g"), key))).evaluate();
+                    const whereExpression = item.where?.replace(new RegExp("@" + item.alias + "\\b", "g"), key);
+                    const valid = item.where === null || (new JSBinder.#ExpressionTree(binder, whereExpression)).evaluate();
                     if (valid) newKeys.push(key);
                 }
 
@@ -705,7 +715,7 @@ class JSBinder
 
     // data-attr="'title' : data.title"
     // data-attr="'title' : data.title; 'src' : data.url"
-    // data-attr="'disabled' : valid === true ? null : 'disabled'"
+    // data-disabled="valid !== true"
     //
     // event: jsbinder-attr  with e.detail.key = attribute key.
     #attributeDirective = ((binder) => new class {
@@ -715,7 +725,7 @@ class JSBinder
         scan = () => {
             this.#cleanup();
 
-            const $attr = binder.#mapAttributes("attr");
+            const [$attr, $disabled] = binder.#mapAttributes("attr", "disabled");
 
             binder.#findDirectives($attr, (obj) => {
                 JSBinder.#pop(obj, $attr).split(";").map(x => x.trim()).filter(x => x !== "").forEach((mapping) => {
@@ -733,6 +743,17 @@ class JSBinder
                             modified: new JSBinder.#ModifiedMemo(),
                         });
                     }
+                });
+            });
+
+            binder.#findDirectives($disabled, (obj) => {
+                const expression = JSBinder.#pop(obj, $disabled);
+
+                this.#items.push({
+                    obj,
+                    key: "disabled",
+                    expressionTree: new JSBinder.#ExpressionTree(binder, "(" + expression + ") ? 'disabled' : null"),
+                    modified: new JSBinder.#ModifiedMemo(),
                 });
             });
         };
