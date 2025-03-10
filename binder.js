@@ -93,16 +93,17 @@ class JSBinder
 
         // Operators
         static #ops = {
-            ternary     : ["?", ":"],
-            paranteses  : ["(", ")"],
-            logicNot    : ["!!", "!"],
-            bitwiseNot  : ["~"],
-            shift       : ["<<", ">>", ">>>"],
-            math        : ["**", "*", "/", "%", "+", "-"],
-            compare     : ["===", "==", "!==", "!=", ">=", ">", "<=", "<"],
-            bitwise     : ["&", "|", "^"],
-            logic       : ["&&", "||"],
-            nullish     : ["??"],
+            ternary         : ["?", ":"],
+            parentheses     : ["(", ")"],
+            logicalNot      : ["!!", "!"],
+            bitwiseNot      : ["~"],
+            shift           : ["<<", ">>", ">>>"],
+            multiplicative  : ["**", "*", "/", "%"],
+            additive        : ["+", "-"],
+            comparison      : ["===", "==", "!==", "!=", ">=", ">", "<=", "<"],
+            bitwise         : ["&", "|", "^"],
+            logical         : ["&&", "||"],
+            nullish         : ["??"],
         };
         static #allOps = Object.values(this.#ops).flat().sort((a,b) => b.length - a.length);
 
@@ -130,7 +131,7 @@ class JSBinder
             const ops = JSBinder.#ExpressionTree.#ops;
 
             let pos = 0;
-    
+
             const recurse = () => {
                 let output = [];
 
@@ -140,23 +141,18 @@ class JSBinder
                     else if (parts[pos] === ")") { pos++; break; }
                     else { output.push(parts[pos]); pos++ }
                 }
-    
+
                 //Note: Currently "+1" is not handled...
                 // (...,) "-", "5", ... >> (...,) "-5", ...
                 const isNumeric = (x) => !!x.match(new RegExp("^-?\\d+\\.?\\d*$"));
                 for (let x = 0; x < output.length - 2; x++)
-                    if (output[x] === "-" && isNumeric(output[x+1]) && (x === 0 || [...ops.math, ...ops.compare].includes(output[x-1]))) //...logic, ...bitwise ???
+                    if (output[x] === "-" && isNumeric(output[x+1]) && (x === 0 || [...ops.multiplicative, ...ops.additive, ...ops.comparison].includes(output[x-1]))) //...logic, ...bitwise ???
                         output.splice(x, 2,`-${output[x+1]}`);
-
-                // ..., "-", x, ... >> ..., +, [0, "-", x], ... (100-2+2 >> 100+(0-2)+2)
-                for (let x = 0; x < output.length - 1; x++)
-                    if (output[x] === "-")
-                        output.splice(x, 2, "+", ["0", "-", output[x+1]]);
 
                 // ..., unary_operator, operand, ... >> ..., [unary_operator, operand], ...
                 // ["false", "===", "!", "true"] >> ["false", "===", ["!", "true"]]
                 // ["false", "===", "!", "!", "true"] >> ["false", "===", ["!", ["!", "true"]]]
-                [...ops.logicNot, ...ops.bitwiseNot].forEach((op) => {
+                [...ops.logicalNot, ...ops.bitwiseNot].forEach((op) => {
                     for (let x = output.length - 2; x >= 0; x--)
                         if (output[x] === op)
                             output.splice(x, 2, [op, output[x+1]]);
@@ -164,10 +160,10 @@ class JSBinder
 
                 // ..., operand, binary_operator, operand, ... >> ..., [operand, binary_operator, operand], ...
                 // ["4", "/", "2", "+", "2", "*", "4", "==", "10"] >> [[["4", "/", "2"], "+", ["2", "*", "4"]], "==", "10"]
-                [...ops.shift, ...ops.math, ...ops.compare, ...ops.bitwise, ...ops.logic, ...ops.nullish].forEach((op) => {
-                    for (let x = output.length - 3; x >= 0; x--)
-                        if (output[x+1] === op)
-                            output.splice(x, 3, [output[x], op, output[x+2]]);
+                [...ops.shift, ...ops.multiplicative, ops.additive, ...ops.comparison, ...ops.bitwise, ...ops.logical, ...ops.nullish].forEach((op) => {
+                    let x = 0;
+                    while (output.length > 3 && x <= output.length - 3)
+                        if (Array.isArray(op) && op.includes(output[x+1]) || output[x+1] === op) { output.splice(x, 3, [output[x], output[x+1], output[x+2]]); } else { x++ };
                 });
 
                 // ..., [1, "==", 2], "?", "'Yes'", ":", "'No'", ... >> ..., [[1, "==", 2], "?", "'Yes'", ":", "'No'"], ...
@@ -189,7 +185,7 @@ class JSBinder
             map.forEach(([op, func]) => { if (data.length === 2 && data[0] === op) { data = [func(data[1])]; } });
             return data;
         };
-    
+
         // Evaluates binary expressions. Ex: '1+2' (operand operator operand)
         // map: [['+', (a, b) => a+b], ...] data: [1, '+', 2] >> [3]
         static #evaluateBinaryOperations = (data, map) => {
@@ -210,7 +206,7 @@ class JSBinder
             // [#round(5.5)] >> [6]
             const handleFunctions = (data) =>
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
-    
+
             // ["!", false] >> [true]
             // ["!!", "0"] >> [false]
             // ["!!", "1"] >> [true]
@@ -245,7 +241,7 @@ class JSBinder
                     ["+",  (x, y) => x +  y], 
                     ["-",  (x, y) => x -  y], 
                 ]);
-    
+
             // [1, "<=", 2] >> [true]
             const handleCompare = (data) => 
                 JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
@@ -258,7 +254,7 @@ class JSBinder
                     ["<=",  (x, y) => x <=  y],
                     ["<",   (x, y) => x <   y],
                 ]);
-    
+
             // [1, "&", 0] >> [0]
             // [1, "|", 0] >> [1]
             const handleBitwise = (data) => 
@@ -450,23 +446,21 @@ class JSBinder
                 if (!m)
                     return JSBinder.#error(`incorrect 'each' expression: ${expression}`);
 
-                if (m) {
-                    const { 1: alias, 2: list } = m;
-                    this.#items.push({
-                        listKey: JSBinder.#generateKey(),
-                        html, 
-                        key, 
-                        keys: [], 
-                        objs: [], 
-                        start, 
-                        end, 
-                        alias, 
-                        list, 
-                        where,
-                        limitTree: limit !== null ? new JSBinder.#ExpressionTree(binder, limit) : null,
-                        skipTree: skip !== null ? new JSBinder.#ExpressionTree(binder, skip) : null,
-                    });
-                }
+                const { 1: alias, 2: list } = m;
+                this.#items.push({
+                    listKey: JSBinder.#generateKey(),
+                    html, 
+                    key, 
+                    keys: [], 
+                    objs: [], 
+                    start, 
+                    end, 
+                    alias, 
+                    list, 
+                    where,
+                    limitTree: limit !== null ? new JSBinder.#ExpressionTree(binder, limit) : null,
+                    skipTree: skip !== null ? new JSBinder.#ExpressionTree(binder, skip) : null,
+                });
             });
         };
 
@@ -512,7 +506,7 @@ class JSBinder
                 //Compare keys to know what to add or remove.
                 const keysToRemove = item.keys.filter(whereNotIn(newKeys));
                 const keysToAdd = newKeys.filter(whereNotIn(item.keys));
-    
+
                 //Remove existing items
                 item.keys.forEach((key, i) => {
                     if (keysToRemove.includes(key)) {
@@ -522,17 +516,17 @@ class JSBinder
                         item.keys[i] = null;
                     }
                 });
-    
+
                 //Filtered lists to not include removed elements
                 let existingKeys = item.keys.filter(whereNotNull);
                 let existingObjs = item.objs.filter(whereNotNull);
-    
+
                 let lastObj = item.start; //Store reference to element to add new items after...
                 let newObjs = [];
-                
+
                 newKeys.forEach((key, i) => {
                     let obj = null;
-    
+
                     if (keysToAdd.includes(key)) {
                         //Add new item
                         obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp("@" + item.alias + "\\b", "g"), `${item.list}[{${key}}]`));
@@ -543,17 +537,17 @@ class JSBinder
                         //Reorder existing items if needed
                         const index = existingKeys.indexOf(key);
                         obj = existingObjs[index];
-    
+
                         if (index > 0) lastObj.after(obj); //if object is not next of existing it needs to be moved to after "lastObj".
-    
+
                         existingObjs.splice(index, 1); //removes object from list of old objects (unhandled objects).
                         existingKeys.splice(index, 1);
                     }
-    
+
                     lastObj = obj;
                     newObjs.push(obj);
                 });
-    
+
                 item.objs = newObjs;
                 item.keys = newKeys;
             });
@@ -589,20 +583,18 @@ class JSBinder
                 if (!m)
                     return JSBinder.#error(`incorrect 'for' expression: ${expression}`);
 
-                if (m) {
-                    const { 1: alias } = m;
-                    this.#items.push({
-                        html, 
-                        keys: [], 
-                        objs: [], 
-                        start, 
-                        end, 
-                        alias, 
-                        where,
-                        fromTree: new JSBinder.#ExpressionTree(binder, from), 
-                        toTree: new JSBinder.#ExpressionTree(binder, to),
-                    });
-                }
+                const { 1: alias } = m;
+                this.#items.push({
+                    html, 
+                    keys: [], 
+                    objs: [], 
+                    start, 
+                    end, 
+                    alias, 
+                    where,
+                    fromTree: new JSBinder.#ExpressionTree(binder, from), 
+                    toTree: new JSBinder.#ExpressionTree(binder, to),
+                });
             });
         };
 
@@ -641,13 +633,13 @@ class JSBinder
                 //Filtered lists to not include removed elements
                 let existingKeys = item.keys.filter(whereNotNull);
                 let existingObjs = item.objs.filter(whereNotNull);
-    
+
                 let lastObj = item.start; //Store reference to element to add new items after...
                 let newObjs = [];
 
                 newKeys.forEach((key) => {
                     let obj = null;
-    
+
                     if (keysToAdd.includes(key)) {
                         //Add new item
                         obj = JSBinder.#deserializeHTML(item.html.replace(new RegExp("@" + item.alias + "\\b", "g"), key));
@@ -663,7 +655,7 @@ class JSBinder
                     lastObj = obj;
                     newObjs.push(obj);
                 });
-    
+
                 item.objs = newObjs;
                 item.keys = newKeys;
             });
@@ -717,7 +709,7 @@ class JSBinder
     // data-attr="'title' : data.title; 'src' : data.url"
     // data-disabled="valid !== true"
     //
-    // event: jsbinder-attr  with e.detail.key = attribute key.
+    // event: jsbinder-attr with e.detail.key = attribute key.
     #attributeDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
@@ -734,15 +726,13 @@ class JSBinder
                     if (!m)
                         return JSBinder.#error(`incorrect 'attribute' syntax: ${mapping}`);
 
-                    if (m) {
-                        const { 2: key, 3: expression } = m;
-                        this.#items.push({
-                            obj, 
-                            key, 
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression),
-                            modified: new JSBinder.#ModifiedMemo(),
-                        });
-                    }
+                    const { 2: key, 3: expression } = m;
+                    this.#items.push({
+                        obj, 
+                        key, 
+                        expressionTree: new JSBinder.#ExpressionTree(binder, expression),
+                        modified: new JSBinder.#ModifiedMemo(),
+                    });
                 });
             });
 
@@ -790,15 +780,13 @@ class JSBinder
                     if (!m)
                         return JSBinder.#error(`incorrect 'class' syntax: ${mapping}`);
 
-                    if (m) {
-                        const { 2: key, 3: expression } = m;
-                        this.#items.push({
-                            obj, 
-                            key, 
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
-                            modified: new JSBinder.#ModifiedMemo(),
-                        });
-                    }
+                    const { 2: key, 3: expression } = m;
+                    this.#items.push({
+                        obj, 
+                        key, 
+                        expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
+                        modified: new JSBinder.#ModifiedMemo(),
+                    });
                 });
             });
         };
@@ -834,15 +822,13 @@ class JSBinder
                     if (!m)
                         return JSBinder.#error(`incorrect 'style' syntax: ${mapping}`);
 
-                    if (m) {
-                        const { 2: key, 3: expression } = m;
-                        this.#items.push({
-                            obj, 
-                            key: JSBinder.#toKebabCase(key),
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
-                            modified: new JSBinder.#ModifiedMemo(),
-                        });
-                    }
+                    const { 2: key, 3: expression } = m;
+                    this.#items.push({
+                        obj, 
+                        key: JSBinder.#toKebabCase(key),
+                        expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
+                        modified: new JSBinder.#ModifiedMemo(),
+                    });
                 });
             });
         };
