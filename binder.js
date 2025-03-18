@@ -77,6 +77,8 @@ class JSBinder
         if (exp === "false") return false;
         if (exp === "null") return null;
         if (exp === "undefined") return undefined;
+        if (exp === "Infinity") return Infinity;
+        if (exp === "NaN") return NaN;
 
         return this.#createPath(exp).reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
     };
@@ -226,15 +228,6 @@ class JSBinder
                     ["+", (x) => 0+x],
                 ]);
 
-            // [0b00010, "<<", 1] >> [0b00100]  /  [2, "<<", 1] >> [4]
-            // [0b00010, ">>", 1] >> [0b00100]  /  [2, ">>", 1] >> [1]
-            const handleShift = (data) =>
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["<<",  (x, y) => x <<  y], //Shift left
-                    [">>",  (x, y) => x >>  y], //Shift right
-                    [">>>", (x, y) => x >>> y], //Shift right (zero-fill)
-                ]);
-
             // [1, "+", 1] >> [2]
             const handleMath = (data) => 
                 JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
@@ -244,6 +237,15 @@ class JSBinder
                     ["%",  (x, y) => x %  y], 
                     ["+",  (x, y) => x +  y], 
                     ["-",  (x, y) => x -  y], 
+                ]);
+
+            // [0b00010, "<<", 1] >> [0b00100]  /  [2, "<<", 1] >> [4]
+            // [0b00010, ">>", 1] >> [0b00100]  /  [2, ">>", 1] >> [1]
+            const handleShift = (data) =>
+                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
+                    ["<<",  (x, y) => x <<  y], //Shift left
+                    [">>",  (x, y) => x >>  y], //Shift right
+                    [">>>", (x, y) => x >>> y], //Shift right (zero-fill)
                 ]);
 
             // [1, "<=", 2] >> [true]
@@ -292,7 +294,7 @@ class JSBinder
                 .map((x) => !Array.isArray(x) && !isFunction(x) && !isOperator(x) ? this.#binder.#get(x) : x);
             
             // Recursive solve tree.
-            const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleSign, handleShift, handleMath, handleCompare, handleBitwise, handleLogic, handleNullish];
+            const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleSign, handleMath, handleShift, handleCompare, handleBitwise, handleLogic, handleNullish];
             const evaluateTree = (input) => JSBinder.#listOrSingle(evaluationHandlers.reduce((acc, fn) => fn(acc), input.map((x) => Array.isArray(x) ? evaluateTree(x) : x)));
 
             return evaluateTree(resolveLiterals(this.#tree));
