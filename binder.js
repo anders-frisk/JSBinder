@@ -92,22 +92,20 @@ class JSBinder
         };
 
         // Operators
-        static #ops = {
-            ternary         : ["?", ":"],
-            parentheses     : ["(", ")"],
-            logicalNot      : ["!!", "!"],
-            bitwiseNot      : ["~"],
-            shift           : ["<<", ">>", ">>>"],
-            multiplicative  : ["**", "*", "/", "%"],
-            additive        : ["+", "-"],
-            comparison      : ["===", "==", "!==", "!=", ">=", ">", "<=", "<"],
-            bitwise         : ["&", "|", "^"],
-            logical         : ["&&", "||"],
-            nullish         : ["??"],
-        };
-        static #allOps = Object.values(this.#ops).flat().sort((a,b) => b.length - a.length);
+        static #ops = [
+            "?", ":",
+            "(", ")",
+            "!!", "!",
+            "~",
+            "<<", ">>", ">>>",
+            "**", "*", "/", "%", "+", "-",
+            "===", "==", "!==", "!=", ">=", ">", "<=", "<",
+            "&", "|", "^",
+            "&&", "||",
+            "??",
+        ];
 
-        static #rgxAnyOp = new RegExp("(" + this.#allOps.map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
+        static #rgxAnyOp = new RegExp("(" + this.#ops.sort((a,b) => b.length - a.length).map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
 
         // Recusive parse and build an expression tree / Abstract Syntax Tree (AST) from an string expression.
         static #buildTree = (exp) => {
@@ -128,8 +126,6 @@ class JSBinder
                 return x;
             });
 
-            const ops = JSBinder.#ExpressionTree.#ops;
-
             let pos = 0;
 
             const recurse = () => {
@@ -142,28 +138,29 @@ class JSBinder
                     else { output.push(parts[pos]); pos++ }
                 }
 
-                //Note: Currently "+1" is not handled...
-                // (...,) "-", "5", ... >> (...,) "-5", ...
-                const isNumeric = (x) => !!x.match(new RegExp("^-?\\d+\\.?\\d*$"));
-                for (let x = 0; x < output.length - 2; x++)
-                    if (output[x] === "-" && isNumeric(output[x+1]) && (x === 0 || [...ops.multiplicative, ...ops.additive, ...ops.comparison].includes(output[x-1]))) //...logic, ...bitwise ???
-                        output.splice(x, 2,`-${output[x+1]}`);
+                // (..., operator) "-", "5", ... >> (..., operator) ["-", "5"], ...
+                for (let x = output.length - 2; x >= 0; x--)
+                    if (["-", "+"].includes(output[x]) && (x === 0 || this.#ops.includes(output[x-1])))
+                        output.splice(x, 2, [output[x], output[x+1]]);
 
                 // ..., unary_operator, operand, ... >> ..., [unary_operator, operand], ...
                 // ["false", "===", "!", "true"] >> ["false", "===", ["!", "true"]]
                 // ["false", "===", "!", "!", "true"] >> ["false", "===", ["!", ["!", "true"]]]
-                [...ops.logicalNot, ...ops.bitwiseNot].forEach((op) => {
-                    for (let x = output.length - 2; x >= 0; x--)
-                        if (output[x] === op)
-                            output.splice(x, 2, [op, output[x+1]]);
-                });
+                for (let x = output.length - 2; x >= 0; x--)
+                    if (["!!", "!", "~"].includes(output[x]))
+                        output.splice(x, 2, [output[x], output[x+1]]);
+        
+                // (right to left) ..., operand, binary_operator, operand, ... >> ..., [operand, binary_operator, operand], ...
+                for (let x = output.length - 3; x >= 0; x--)
+                    if (["**"].includes(output[x+1]))
+                        output.splice(x, 3, [output[x], output[x+1], output[x+2]]);
 
-                // ..., operand, binary_operator, operand, ... >> ..., [operand, binary_operator, operand], ...
+                // (left to right) ..., operand, binary_operator, operand, ... >> ..., [operand, binary_operator, operand], ...
                 // ["4", "/", "2", "+", "2", "*", "4", "==", "10"] >> [[["4", "/", "2"], "+", ["2", "*", "4"]], "==", "10"]
-                [...ops.shift, ...ops.multiplicative, ops.additive, ...ops.comparison, ...ops.bitwise, ...ops.logical, ...ops.nullish].forEach((op) => {
+                [["*", "/", "%"], ["+", "-"], ["<<", ">>", ">>>"], ["===", "==", "!==", "!=", ">=", ">", "<=", "<"], ["&"], ["|", "^"], ["&&"], ["||"], ["??"]].forEach((ops) => {
                     let x = 0;
                     while (output.length > 3 && x <= output.length - 3)
-                        if (Array.isArray(op) && op.includes(output[x+1]) || output[x+1] === op) { output.splice(x, 3, [output[x], output[x+1], output[x+2]]); } else { x++ };
+                        if (ops.includes(output[x+1])) { output.splice(x, 3, [output[x], output[x+1], output[x+2]]); } else { x++ };
                 });
 
                 // ..., [1, "==", 2], "?", "'Yes'", ":", "'No'", ... >> ..., [[1, "==", 2], "?", "'Yes'", ":", "'No'"], ...
@@ -220,6 +217,13 @@ class JSBinder
             const handleBitwiseNot = (data) => 
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
                     ["~", (x) => ~x],
+                ]);
+
+            // ["-", 5] >> [-5]
+            const handleSign = (data) =>
+                JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
+                    ["-", (x) => 0-x],
+                    ["+", (x) => 0+x],
                 ]);
 
             // [0b00010, "<<", 1] >> [0b00100]  /  [2, "<<", 1] >> [4]
@@ -279,7 +283,7 @@ class JSBinder
                 ]);
 
             const isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^#[a-zA-Z]{1}[0-9a-zA-Z]*$"));
-            const isOperator = (x) => JSBinder.#ExpressionTree.#allOps.includes(x);
+            const isOperator = (x) => JSBinder.#ExpressionTree.#ops.includes(x);
 
             // Recursive parse tree nodes to values.
             // ["'string'", vaiable_eq_1, "true", ...] >> ["string", 1, true, ...]   
@@ -288,7 +292,7 @@ class JSBinder
                 .map((x) => !Array.isArray(x) && !isFunction(x) && !isOperator(x) ? this.#binder.#get(x) : x);
             
             // Recursive solve tree.
-            const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleShift, handleMath, handleCompare, handleBitwise, handleLogic, handleNullish];
+            const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleSign, handleShift, handleMath, handleCompare, handleBitwise, handleLogic, handleNullish];
             const evaluateTree = (input) => JSBinder.#listOrSingle(evaluationHandlers.reduce((acc, fn) => fn(acc), input.map((x) => Array.isArray(x) ? evaluateTree(x) : x)));
 
             return evaluateTree(resolveLiterals(this.#tree));
@@ -302,7 +306,6 @@ class JSBinder
         exp: ".+",
     };
 
-    //static #list = (x) => Array.isArray(x) ? x : [x];
     static #listOrSingle = (x) => (Array.isArray(x) && x.length === 1) ? x[0] : x;
 
     static #isPlainObject = (obj) => obj !== null && typeof obj === 'object' && !Array.isArray(obj);
