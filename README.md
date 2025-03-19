@@ -281,7 +281,7 @@ Expressions can besides accessing the state handle the following standard JavaSc
 - Math `*`, `/`, `+`, `-`, `%`, `**`
 - Binary `&`, `|`, `^`, `<<`, `>>`, `>>>`, `~`
 - Ternary `...?...:...`
-- Strings, numbers, booleans, null, undefined...
+- Strings, numbers, true, false, null, undefined, Infinity, NaN.
 - [Functions](#Functions)
 
 

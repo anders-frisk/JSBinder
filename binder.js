@@ -101,10 +101,10 @@ class JSBinder
             "~",
             "<<", ">>", ">>>",
             "**", "*", "/", "%", "+", "-",
-            "===", "==", "!==", "!=", ">=", ">", "<=", "<",
-            "&", "|", "^",
+            ">=", ">", "<=", "<", "===", "==", "!==", "!=", 
+            "&", "^", "|",
             "&&", "||",
-            "??",
+            "??", 
         ];
 
         static #rgxAnyOp = new RegExp("(" + this.#ops.sort((a,b) => b.length - a.length).map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
@@ -159,7 +159,7 @@ class JSBinder
 
                 // (left to right) ..., operand, binary_operator, operand, ... >> ..., [operand, binary_operator, operand], ...
                 // ["4", "/", "2", "+", "2", "*", "4", "==", "10"] >> [[["4", "/", "2"], "+", ["2", "*", "4"]], "==", "10"]
-                [["*", "/", "%"], ["+", "-"], ["<<", ">>", ">>>"], ["===", "==", "!==", "!=", ">=", ">", "<=", "<"], ["&"], ["|", "^"], ["&&"], ["||"], ["??"]].forEach((ops) => {
+                [["*", "/", "%"], ["+", "-"], ["<<", ">>", ">>>"], [">=", ">", "<=", "<"], ["===", "==", "!==", "!="], ["&"], ["^"], ["|"], ["&&"], ["||"], ["??"]].forEach((ops) => {
                     let x = 0;
                     while (output.length > 3 && x <= output.length - 3)
                         if (ops.includes(output[x+1])) { output.splice(x, 3, [output[x], output[x+1], output[x+2]]); } else { x++ };
@@ -207,50 +207,27 @@ class JSBinder
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
 
             // ["!", false] >> [true]
-            // ["!!", "0"] >> [false]
-            // ["!!", "1"] >> [true]
-            const handleLogicNot = (data) => 
+            const handleUnaryOperations = (data) => 
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
                     ["!!", (x) => !!x],
-                    ["!",  (x) => !x],
+                    ["!",  (x) =>  !x],
+                    ["~",  (x) =>  ~x],
+                    ["-",  (x) => 0-x],
+                    ["+",  (x) => 0+x],
                 ]);
 
-            // ["~", 0b010101] >> [0b11111111111111111111111111101010] (-22 in 32bits)
-            const handleBitwiseNot = (data) => 
-                JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
-                    ["~", (x) => ~x],
-                ]);
-
-            // ["-", 5] >> [-5]
-            const handleSign = (data) =>
-                JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
-                    ["-", (x) => 0-x],
-                    ["+", (x) => 0+x],
-                ]);
-
-            // [1, "+", 1] >> [2]
-            const handleMath = (data) => 
+            // [1, "+", 2] >> [3]
+            const handleBinaryOperations = (data) =>
                 JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["**", (x, y) => x ** y], 
-                    ["*",  (x, y) => x *  y], 
-                    ["/",  (x, y) => x /  y], 
-                    ["%",  (x, y) => x %  y], 
-                    ["+",  (x, y) => x +  y], 
-                    ["-",  (x, y) => x -  y], 
-                ]);
-
-            // [0b00010, "<<", 1] >> [0b00100]  /  [2, "<<", 1] >> [4]
-            // [0b00010, ">>", 1] >> [0b00100]  /  [2, ">>", 1] >> [1]
-            const handleShift = (data) =>
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["<<",  (x, y) => x <<  y], //Shift left
-                    [">>",  (x, y) => x >>  y], //Shift right
-                    [">>>", (x, y) => x >>> y], //Shift right (zero-fill)
-                ]);
-
-            // [1, "<=", 2] >> [true]
-            const handleCompare = (data) => 
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
+                    ["**",  (x, y) => x **  y], 
+                    ["*",   (x, y) => x *   y], 
+                    ["/",   (x, y) => x /   y], 
+                    ["%",   (x, y) => x %   y], 
+                    ["+",   (x, y) => x +   y], 
+                    ["-",   (x, y) => x -   y], 
+                    ["<<",  (x, y) => x <<  y],
+                    [">>",  (x, y) => x >>  y],
+                    [">>>", (x, y) => x >>> y],
                     ["===", (x, y) => x === y],
                     ["==",  (x, y) => x ==  y],
                     ["!==", (x, y) => x !== y],
@@ -259,29 +236,12 @@ class JSBinder
                     [">",   (x, y) => x >   y],
                     ["<=",  (x, y) => x <=  y],
                     ["<",   (x, y) => x <   y],
-                ]);
-
-            // [1, "&", 0] >> [0]
-            // [1, "|", 0] >> [1]
-            const handleBitwise = (data) => 
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["&", (x, y) => x & y], //AND
-                    ["^", (x, y) => x ^ y], //XOR
-                    ["|", (x, y) => x | y], //OR
-                ]);
-
-            // [false, "&&", true] >> [false]
-            // [false, "||", true] >> [true]
-            const handleLogic = (data) => 
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["&&", (x, y) => x && y],
-                    ["||", (x, y) => x || y],
-                ]);
-
-            // [undefined, "??", "'fallback'"] >> ["'fallback'"]
-            const handleNullish = (data) =>
-                JSBinder.#ExpressionTree.#evaluateBinaryOperations(data, [
-                    ["??", (x, y) => x ?? y],
+                    ["&",   (x, y) => x &   y],
+                    ["^",   (x, y) => x ^   y],
+                    ["|",   (x, y) => x |   y],
+                    ["&&",  (x, y) => x &&  y],
+                    ["||",  (x, y) => x ||  y],
+                    ["??",  (x, y) => x ??  y],
                 ]);
 
             const isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^#[a-zA-Z]{1}[0-9a-zA-Z]*$"));
@@ -294,8 +254,9 @@ class JSBinder
                 .map((x) => !Array.isArray(x) && !isFunction(x) && !isOperator(x) ? this.#binder.#get(x) : x);
             
             // Recursive solve tree.
-            const evaluationHandlers = [handleTernary, handleFunctions, handleLogicNot, handleBitwiseNot, handleSign, handleMath, handleShift, handleCompare, handleBitwise, handleLogic, handleNullish];
-            const evaluateTree = (input) => JSBinder.#listOrSingle(evaluationHandlers.reduce((acc, fn) => fn(acc), input.map((x) => Array.isArray(x) ? evaluateTree(x) : x)));
+            const evaluateTree = (input) => JSBinder.#listOrSingle(
+                [handleTernary, handleFunctions, handleUnaryOperations, handleBinaryOperations]
+                    .reduce((acc, fn) => fn(acc), input.map((x) => Array.isArray(x) ? evaluateTree(x) : x)));
 
             return evaluateTree(resolveLiterals(this.#tree));
         };
@@ -315,8 +276,8 @@ class JSBinder
     //Base 36 randomizer, (0).toString(36) >> "0", (35).toString(36) >> "z"
     static #generateKey = (length = 8) => { function* random() { for (let i = 0; i < length; i++) yield (Math.floor(Math.random() * 36)).toString(36); }; return [...random()].join("") };
 
-    static #toKebabCase = (text) => text.trim().replace(new RegExp("([a-z]{1})([A-Z]{1})", "g"), (_, a, b) => `${a}-${b.toLowerCase()}`); //"marginTop" >> "margin-top"
-    static #toCamelCase = (text) => text.trim().replace(new RegExp("([a-z]{1})\-([a-z]{1})", "g"), (_, a, b) => `${a}${b.toUpperCase()}`); //"margin-top" >> "marginTop"
+    static #toKebabCase = (text) => text.trim().replace(new RegExp("([a-z])([A-Z])", "g"), (_, a, b) => `${a}-${b.toLowerCase()}`); //"marginTop" >> "margin-top"
+    static #toCamelCase = (text) => text.trim().replace(new RegExp("([a-z])-([a-z])", "g"), (_, a, b) => `${a}${b.toUpperCase()}`); //"margin-top" >> "marginTop"
 
     static #pop = (obj, ...directives) => JSBinder.#listOrSingle(directives.map(directive => { const data = obj.dataset[this.#toCamelCase(directive)]?.trim().replace(new RegExp("\\s\\s+", "g"), " ") ?? null; obj.removeAttribute(`data-${directive}`); return data; }));
 
