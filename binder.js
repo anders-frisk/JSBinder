@@ -93,23 +93,13 @@ class JSBinder
             this.#tree = JSBinder.#ExpressionTree.#buildTree(exp);
         };
 
-        // Operators
-        static #ops = [
-            "?", ":",
-            "(", ")",
-            "!!", "!",
-            "~",
-            "<<", ">>", ">>>",
-            "**", "*", "/", "%", "+", "-",
-            ">=", ">", "<=", "<", "===", "==", "!==", "!=", 
-            "&", "^", "|",
-            "&&", "||",
-            "??", 
-        ];
+        static #operators = ["?", ":", "(", ")", "!!", "!", "~", "<<", ">>", ">>>", "**", "*", "/", "%", "+", "-", ">=", ">", "<=", "<", "===", "==", "!==", "!=", "&", "^", "|", "&&", "||", "??"];
+        static #rgxAnyOperator = new RegExp("(" + this.#operators.sort((a,b) => b.length - a.length).map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
 
-        static #rgxAnyOp = new RegExp("(" + this.#ops.sort((a,b) => b.length - a.length).map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
+        static #isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^#[a-zA-Z]{1}[0-9a-zA-Z]*$"));
+        static #isOperator = (x) => typeof x === "string" && this.#operators.includes(x);
 
-        // Recusive parse and build an expression tree / Abstract Syntax Tree (AST) from an string expression.
+        // Recusive parse and build an expression tree / Abstract Syntax Tree (AST) from an string expression in order of operator precedence.
         static #buildTree = (exp) => {
             const stringMap = new Map();
 
@@ -119,7 +109,7 @@ class JSBinder
                 exp = exp.replace(text, `{{${index}}}`);
             });
 
-            let parts = exp.replace(this.#rgxAnyOp, " $1 ").trim().split(new RegExp("\\s+"));
+            let parts = exp.replace(this.#rgxAnyOperator, " $1 ").trim().split(new RegExp("\\s+"));
 
             //"{{index}}" >> "..." & '...' Restore strings in expression.
             parts = parts.map((x) => {
@@ -142,7 +132,7 @@ class JSBinder
 
                 // (..., operator) "-", "5", ... >> (..., operator) ["-", "5"], ...
                 for (let x = output.length - 2; x >= 0; x--)
-                    if (["-", "+"].includes(output[x]) && (x === 0 || this.#ops.includes(output[x-1])))
+                    if (["-", "+"].includes(output[x]) && (x === 0 || JSBinder.#ExpressionTree.#isOperator(output[x-1])))
                         output.splice(x, 2, [output[x], output[x+1]]);
 
                 // ..., unary_operator, operand, ... >> ..., [unary_operator, operand], ...
@@ -192,7 +182,7 @@ class JSBinder
             return data;
         };
 
-        // Recursive evaluation in order of operator precedence.
+        // Recursive evaluation of expression tree.
         evaluate = () => {
             // [[1, "==", 2], "?", "'yes'", ":", "'no'" ] >> ["'no'"]
             const handleTernary = (data) => {
@@ -202,11 +192,11 @@ class JSBinder
                 return data;
             };
 
-            // [#round(5.5)] >> [6]
+            // [#round, 5.5] >> [6]
             const handleFunctions = (data) =>
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
 
-            // ["!", false] >> [true]
+            // ["!", true] >> [false]
             const handleUnaryOperations = (data) => 
                 JSBinder.#ExpressionTree.#evaluateUnaryOperations(data, [
                     ["!!", (x) => !!x],
@@ -244,15 +234,12 @@ class JSBinder
                     ["??",  (x, y) => x ??  y],
                 ]);
 
-            const isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^#[a-zA-Z]{1}[0-9a-zA-Z]*$"));
-            const isOperator = (x) => JSBinder.#ExpressionTree.#ops.includes(x);
-
             // Recursive parse tree nodes to values.
             // ["'string'", vaiable_eq_1, "true", ...] >> ["string", 1, true, ...]   
             const resolveLiterals = (input) => input
                 .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
-                .map((x) => !Array.isArray(x) && !isFunction(x) && !isOperator(x) ? this.#binder.#get(x) : x);
-            
+                .map((x) => !Array.isArray(x) && !JSBinder.#ExpressionTree.#isFunction(x) && !JSBinder.#ExpressionTree.#isOperator(x) ? this.#binder.#get(x) : x);
+
             // Recursive solve tree.
             const evaluateTree = (input) => JSBinder.#listOrSingle(
                 [handleTernary, handleFunctions, handleUnaryOperations, handleBinaryOperations]
@@ -273,17 +260,14 @@ class JSBinder
 
     static #isPlainObject = (obj) => obj !== null && typeof obj === 'object' && !Array.isArray(obj);
 
-    //Base 36 randomizer, (0).toString(36) >> "0", (35).toString(36) >> "z"
-    static #generateKey = (length = 8) => { function* random() { for (let i = 0; i < length; i++) yield (Math.floor(Math.random() * 36)).toString(36); }; return [...random()].join("") };
-
     static #toKebabCase = (text) => text.trim().replace(new RegExp("([a-z])([A-Z])", "g"), (_, a, b) => `${a}-${b.toLowerCase()}`); //"marginTop" >> "margin-top"
     static #toCamelCase = (text) => text.trim().replace(new RegExp("([a-z])-([a-z])", "g"), (_, a, b) => `${a}${b.toUpperCase()}`); //"margin-top" >> "marginTop"
 
-    static #pop = (obj, ...directives) => JSBinder.#listOrSingle(directives.map(directive => { const data = obj.dataset[this.#toCamelCase(directive)]?.trim().replace(new RegExp("\\s\\s+", "g"), " ") ?? null; obj.removeAttribute(`data-${directive}`); return data; }));
+    static #pop = (obj, ...keys) => this.#listOrSingle(keys.map(key => { const data = obj.dataset[this.#toCamelCase(key)]?.trim().replace(new RegExp("\\s\\s+", "g"), " ") ?? null; obj.removeAttribute(`data-${key}`); return data; }));
 
     static #cleanHTML = (html) => html.trim().replace(new RegExp("\\<!--[\\s\\S]*?--\\>", "g"), "").replace(new RegExp("\\s\\s+", "g"), " ");
 
-    static #replaceObject = (obj, ...objs) => { obj.replaceWith(...objs); return JSBinder.#listOrSingle(objs); };
+    static #replaceObject = (obj, ...objs) => { obj.replaceWith(...objs); return this.#listOrSingle(objs); };
 
     static #deserializeHTML = (html) => { let t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
 
@@ -393,6 +377,7 @@ class JSBinder
     #eachDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.start)); };
+        #index = 0;
 
         scan = () => {
             this.#cleanup();
@@ -414,7 +399,7 @@ class JSBinder
 
                 const { 1: alias, 2: list } = m;
                 this.#items.push({
-                    listKey: JSBinder.#generateKey(),
+                    itemIndex: this.#index++,
                     html, 
                     key, 
                     keys: [], 
@@ -464,9 +449,9 @@ class JSBinder
                         .toString()
                         .replace(new RegExp("[^a-zA-Z0-9]", "g"), "_");
 
-                    binder.#indexMap.set(`${item.listKey}_${key}`, index);
+                    binder.#indexMap.set(`${item.itemIndex}_${key}`, index);
 
-                    newKeys.push(`${item.listKey}_${key}`);
+                    newKeys.push(`${item.itemIndex}_${key}`);
                 });
 
                 //Compare keys to know what to add or remove.
@@ -658,16 +643,17 @@ class JSBinder
         };
 
         update = () => {
-            const onType = (...types) => (x) => types.includes(x.type);
-
-            // <select> must be binded after any other binds if <option> depends on 'data-each' or 'data-for' etc.
-            [...this.#items.filter(onType(null)), ...this.#items.filter(onType("select"))].forEach((item) => {
+            const updateItem = (item) => {
                 const result = item.expressionTree.evaluate();
                 if (item.modified.check(result) || item.type === "select" && item.obj.value !== result) {
                     JSBinder.#bind(item.obj, JSBinder.#isEmpty(result) ? "" : result);
                     JSBinder.#dispatchEvent(item.obj, "bind", { value: result });
                 }
-            });
+            };
+
+            // <select> must be binded after any other binds if <option> depends on 'data-each' or 'data-for' etc.
+            this.#items.filter(x => x.type === null).forEach((item) => updateItem(item));
+            this.#items.filter(x => x.type === "select").forEach((item) => updateItem(item));
         };
     })(this);
 
