@@ -1,17 +1,17 @@
 class JSBinder
 {
+    // let myJSBinder = new JSBinder();
     constructor(options = {})
     {
         if (!JSBinder.#isPlainObject(options))
             return JSBinder.#error(`options must be an object`);
 
-        this.#settings = {...JSBinder.#defaults, ...options};
+        this.#settings = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000, ...options };
 
         this.#highFrequencyController.start(this.#settings.highFrequencyInterval);
         this.#lowFrequencyController.start(this.#settings.lowFrequencyInterval);
     };
 
-    static #defaults = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000 };
     #settings;
 
     #indexMap = new Map();
@@ -367,11 +367,12 @@ class JSBinder
         };
     })(this);
 
-    // data-each="row in data"
-    // var data = ["a", "b", ...]       >> <div data-each="@item in data" data-key="@item" data-bind="@item" />                                 >> <div>a</div><div>b</div>...
-    // var data = [{title: "a"}, ...]   >> <div data-each="@item in data" data-key="@item.title" data-bind="@item.title" />                     >> <div>a</div>...
-    // var data = [1,2,3,4,5, ...]      >> <div data-each="@number in data" data-key="@number" data-bind="@number" data-where="@number > 3" />  >> <div>4</div><div>5</div>...
-    // var data = [1,2,3,4,5, ...]      >> <div data-each="@number in data" data-key="@number" data-skip="1" data-limit="2" />                  >> <div>2</div><div>3</div>
+    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."]
+    //
+    // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item" data-bind="@item" />                                     >> <p>a</p><p>b</p>...
+    // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title" data-bind="@item.title" />                         >> <p>a</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-bind="@number" data-where="@number > 3" />    >> <p>4</p><p>5</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-skip="1" data-limit="2" />                    >> <p>2</p><p>3</p>
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
     #eachDirective = ((binder) => new class {
@@ -507,6 +508,8 @@ class JSBinder
         };
     })(this);
 
+    // data-for="@value" data-from="..." data-to="..." [data-where="..."]
+    //
     // <p data-for="@index" data-from="0" data-to="myArray.length" data-bind="myArray[@index]" /> >> ...
     // <p data-for="@number" data-from="3" data-to="7" data-bind="@number" /> >> <p>3</p><p>4</p>...<p>7</p>
     // <p data-for="@number" data-from="1" data-to="7" data-where="@number % 2 == 0" data-bind="@number" /> >> <p>2</p><p>4</p><p>6</p>
@@ -616,6 +619,7 @@ class JSBinder
     })(this);
 
     // data-bind='data.title'
+    //
     // <div data-bind="..." /> >> <div>...</div>
     // <img data-bind="..." /> >> <img src="..." />
     // <input/select data-bind="..." /> >> <input/select value="..." />
@@ -796,7 +800,8 @@ class JSBinder
         };
     })(this);
 
-    // var tree =  [{ title: "Aaaa", items: [{ title: "Bbbb", items: [...] }, { title: "Cccc", items: [...] }] }];
+    // { tree: [{ title: "Aaaa", items: [{ title: "Bbbb", items: [...] }, { title: "Cccc", items: [...] }] }] }
+    //
     // <template data-template="tree">
     //   <li data-each="@item in @data">
     //     <span data-bind="@item.title"></span>
@@ -883,5 +888,6 @@ class JSBinder
         if (count > 0) this.#scan();
     };
 
+    // myJSBinder.scan() : Scan the DOM for new elements to handle.
     scan = () => { this.#scanRequest = true; };
 };
