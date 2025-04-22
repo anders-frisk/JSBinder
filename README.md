@@ -46,7 +46,7 @@ binder.setState({ decription: "This is an updated description." });
 -->
 
 # Directives
-Any HTML element can be connected to one or more directives by adding dataset attributes with [expressions](#Expressions).
+You can attach one or more directives to any HTML element by adding `data-*` attributes containing [expressions](#Expressions).
 
 
 ## Bind
@@ -260,9 +260,12 @@ Result:
 Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = property` and `e.detail.value = value`.
 
 
+# Reversed Directives
+The following directives are used to update state in response to user interactions with the DOM.
+
 ## OnClick
 Adds functionallity to update state with new data from an onclick event.<br />
-`data-onclick="data = 1"` or multiple values separated `data-onclick="data1 = 1; data2 = 2"`.
+`data-onclick="data = 1"` or multiple values `data-onclick="data1 = 1; data2 = 2"`.
 ```html
 <button data-onclick="page = 1">First page</button>
 ```
@@ -271,7 +274,7 @@ Adds functionallity to update state with new data from an onclick event.<br />
 ## OnChange
 Adds functionallity to update state with new data from onchange event.<br />
 Variable `@value` will return the value as `string` for input/select and `boolean` for checkbox.<br />
-`data-onchange="data = @value"` or multiple values separated `data-onchange="data1 = @value; data2 = 2"`.
+`data-onchange="data = @value"` or multiple values `data-onchange="data1 = @value; data2 = 2"`.
 ```html
 <input type='text' data-onchange="title = @value" />
 <select data-onchange="page = @value">...</select>
