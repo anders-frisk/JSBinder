@@ -26,7 +26,7 @@
         </script>
     </head>
     <body onload="binder.scan();">
-        <select data-bind='type_filter' onchange="binder.setState({type_filter: this.value})">
+        <select data-bind='type_filter' data-onchange="type_filter = @value">
             <option value="">All</option>
             <option data-each="@x in type_filters" data-key="@x" data-bind="@x" data-attr="'value' : @x"></option>
         </select>

@@ -260,6 +260,24 @@ Result:
 Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = property` and `e.detail.value = value`.
 
 
+## OnClick
+Adds functionallity to update state with new data from an onclick event.<br />
+`data-onclick="data = 1"` or multiple values separated `data-onclick="data1 = 1; data2 = 2"`.
+```html
+<button data-onclick="page = 1">First page</button>
+```
+
+
+## OnChange
+Adds functionallity to update state with new data from onchange event.<br />
+Variable `@value` will return the value as `string` for input/select and `boolean` for checkbox.<br />
+`data-onchange="data = @value"` or multiple values separated `data-onchange="data1 = @value; data2 = 2"`.
+```html
+<input type='text' data-onchange="title = @value" />
+<select data-onchange="page = @value">...</select>
+```
+
+
 # Templates
 `<template data-template="templatename">` is helpful when same element will be added in multiple places. A variable `@data` will be used inside the template. Templates also allows recursive implementations.
 
@@ -314,7 +332,7 @@ binder.setState({
 ```
 
 ```html
-<select data-bind='type_filter' onchange="binder.setState({type_filter: this.value})">
+<select data-bind='type_filter' data-onchange="type_filter = @value">
   <option value="">All</option>
   <option data-each="@x in type_filters" data-key="@x" data-bind="@x" data-attr="'value' : @x"></option>
 </select>
@@ -357,7 +375,7 @@ binder.setState({
     <td data-bind="planets[@i].type"></td>
   </tr>
 </table>
-<button data-for="@page" data-from="1" data-to="#ceil(planets.length / pagesize)" data-bind="@page" onclick="binder.setState({page: parseInt(this.innerText) - 1})"></button>
+<button data-for="@page" data-from="1" data-to="#ceil(planets.length / pagesize)" data-bind="@page" data-onclick="page = @page - 1"></button>
 ```
 
 

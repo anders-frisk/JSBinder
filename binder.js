@@ -109,7 +109,6 @@ class JSBinder
         }
     };
 
-
     // myJSBinder.addFunction("round", (x) => Math.round(x)); >> <span data-bind="#round(5.55)"></span> >> <span>6</span>
     // myJSBinder.addFunction("abs", function (x) { return Math.abs(x) });
     addFunction = (name, method) => {
@@ -876,10 +875,21 @@ class JSBinder
 
                     const toSafeString = (input) => "'" + input.replace(/\'/g, "' + \"'\" + '") + "'";
 
-                    //ToDo: checkbox... !!obj.checked
                     //ToDo: textarea
-                    if (obj.matches("select")) obj.addEventListener("change", (e) => set(obj.value ? toSafeString(obj.value) : null));
-                    if (obj.matches("input")) obj.addEventListener("input", (e) => set(toSafeString(obj.value)));
+                    switch (true)
+                    {
+                        case obj.matches("input[type='checkbox']"):
+                            obj.addEventListener("change", (e) => set(!!obj.checked));
+                            break;
+
+                        case obj.matches("select"):
+                            obj.addEventListener("change", (e) => set(obj.value ? toSafeString(obj.value) : null));
+                            break;
+
+                        case obj.matches("input"):
+                            obj.addEventListener("input", (e) => set(toSafeString(obj.value)));
+                            break;
+                    }
                 });
             });
         };
@@ -960,7 +970,7 @@ class JSBinder
     #dispose = () => {
         this.#highFrequencyController.stop();
         this.#lowFrequencyController.stop();
-        this.#eventsAbortController.abort(); // Abort all events under this instance.
+        this.#eventsAbortController.abort(); // Abort/dispose all events under this instance.
         JSBinder.#info("Instance disposed!");
     };
 
