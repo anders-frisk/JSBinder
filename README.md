@@ -219,7 +219,7 @@ Attribute triggers the [event](#Events) `jsbinder-attr` with `e.detail.key = att
 
 
 ## Class
-Add or remove a class with `data-class="'classname' : expression"`.<br /> Define more classes separated by semicolon `data-class="'classname1' : expression1; 'classname2' : expression2"`.<br />If expression evaluates 'trueish' class is added and if evaluated 'falsish' class will be removed.
+Add or remove a class with `data-class="'classname' : expression"`.<br /> Define more classes separated by semicolon `data-class="'classname1' : expression1; 'classname2' : expression2"`.<br />If expression evaluates 'truthy' class is added and if evaluated 'falsy' class will be removed.
 
 ```javascript
 binder.setState({ details: { title: "Earth", type: "Terrestrial" }});
