@@ -17,8 +17,6 @@ class JSBinder
     #eventsAbortController;
     #settings;
 
-    #dispatchEvent = (obj, type, detail = {}) => obj.dispatchEvent(new CustomEvent(`jsbinder-${type}`, { 'bubbles': true, 'detail': detail }));
-
 
     // Utils
 
@@ -54,11 +52,15 @@ class JSBinder
     #functions = {};
 
     // myJSBinder.setState({ list: ["A", "B"], title: "Abcde" });
+    // myJSBinder.setState((current) => ({ items : [...current.items, "new item"] }));
+    //
     // Object must not be fully defined each time. Update is adds/modifies specified members.
     // Setting a member to 'undefined' removes it from the state.
     setState = (data) => {
+        if (typeof data === "function" && data.length === 1) data = data(this.#state);
+
         if (!JSBinder.#isPlainObject(data))
-            return JSBinder.#error(`setState requires an object as input`);
+            return JSBinder.#error(`setState requires an object or a function with a single attribute returning an object as input`);
 
         const recurse = (state, updates) => {
             Object.keys(updates).forEach((key) => { if (updates[key] === undefined) { delete state[key]; } else { state[key] = JSBinder.#isPlainObject(updates[key]) ? recurse(state[key] || {}, updates[key]) : updates[key]; } });
@@ -87,7 +89,7 @@ class JSBinder
 
         if (exp.match(new RegExp("^-?[0-9]+$"))) return parseInt(exp); //int
         if (exp.match(new RegExp("^-?[0-9]+\\.[0-9]+$"))) return parseFloat(exp); //float
-        if (exp.match(new RegExp("^" + "(['\"])" + ".*" + "\\1" + "$"))) return exp.substr(1,exp.length-2); //string ('text' or "text")
+        if (exp.match(new RegExp("^" + `(['"])` + ".*" + "\\1" + "$"))) return exp.substr(1,exp.length-2); //string ('text' or "text")
         if (exp === "true") return true;
         if (exp === "false") return false;
         if (exp === "null") return null;
@@ -291,11 +293,25 @@ class JSBinder
     #evaluate = (expression) => (new JSBinder.#ExpressionTree(this, expression)).evaluate();
 
 
+    static #types = { checkbox: "checkbox", input: "input", select: "select", img: "img", iframe: "iframe" };
+
+    static #typeOf = (obj) => {
+        if (obj.matches("input[type='checkbox']")) return JSBinder.#types.checkbox;
+        if (obj.matches("input")) return JSBinder.#types.input;
+        if (obj.matches("select")) return JSBinder.#types.select;
+        if (obj.matches("img")) return JSBinder.#types.img;
+        if (obj.matches("iframe")) return JSBinder.#types.iframe;
+        return null;
+    };
+
+
     static #rgxVar = "[a-zA-Z]{1}[0-9a-zA-Z_]*";
     static #rgxClass = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
     static #rgxAttr = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
+    static #rgxInt = "[0-9]+";
+    static #rgxIndexKey = "{[a-zA-Z0-9_]+\\}";
     static #rgxExp = ".+";
-    static #rgxPath = JSBinder.#rgxVar + "(?:" + "(?:" + "\\[[0-9]+\\]" + "|" + "\\[@" + JSBinder.#rgxVar + "\\]" + "|" + "\\." + ")" + JSBinder.#rgxVar + ")*";
+    static #rgxPath = JSBinder.#rgxVar + "(?:" + "(?:" + [`\\[${JSBinder.#rgxInt}\\]`, `\\[@${JSBinder.#rgxVar}\\]`, `\\[${JSBinder.#rgxIndexKey}\\]`, "\\."].join("|") + ")" + `(?:${JSBinder.#rgxVar})?` + ")*";
 
     static #rgxFormatVariable = (key) => new RegExp("@" + key + "\\b", "g");
 
@@ -312,6 +328,9 @@ class JSBinder
             .filter((obj) => ![`[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`].some(x => !!obj.parentNode.closest(x)))
             .forEach((obj) => callback(obj));
     };
+
+    // Helper function to dispatch custom JSBinder events.
+    #dispatchEvent = (obj, type, detail = {}) => obj.dispatchEvent(new CustomEvent(`jsbinder-${type}`, { 'bubbles': true, 'detail': detail }));
 
     // Memoization of last value to check if it has changed.
     // let memo = new JSBinder.#ModifiedMemo();
@@ -367,7 +386,7 @@ class JSBinder
         };
     })(this);
 
-    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."]
+    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-orderby="..."]
     //
     // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item" data-bind="@item" />                                     >> <p>a</p><p>b</p>...
     // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title" data-bind="@item.title" />                         >> <p>a</p>...
@@ -383,17 +402,18 @@ class JSBinder
         scan = () => {
             this.#cleanup();
 
-            const [$each, $key, $where, $skip, $limit] = binder.#mapAttributes("each", "key", "where", "skip", "limit");
+            const [$each, $key, $where, $skip, $limit, $orderby] = binder.#mapAttributes("each", "key", "where", "skip", "limit", "orderby");
 
             binder.#findDirectives($each, (obj) => {
-                const [expression, key, where, skip, limit] = JSBinder.#pop(obj)($each, $key, $where, $skip, $limit);
+                const [expression, key, where, skip, limit, orderby] = JSBinder.#pop(obj)($each, $key, $where, $skip, $limit, $orderby);
                 const html = JSBinder.#cleanHTML(obj.outerHTML);
                 const [start, end] = JSBinder.#replaceObject(obj)(document.createComment("each"), document.createComment("/each"));
 
                 if (key === null)
                     return JSBinder.#error("'each' must have 'key' expression defined");
 
-                const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgxVar})` + "\\s+" + "in" + "\\s+" + "(\\S+)" + "$"));
+                //const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgxVar})` + "\\s+" + "in" + "\\s+" + "(\\S+)" + "$"));
+                const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgxVar})` + "\\s+" + "in" + "\\s+" + "(" + JSBinder.#rgxPath + ")" + "$"));
 
                 if (!m)
                     return JSBinder.#error(`incorrect 'each' expression: ${expression}`);
@@ -410,6 +430,7 @@ class JSBinder
                     alias, 
                     list, 
                     where,
+                    orderby,
                     limitTree: limit !== null ? new JSBinder.#ExpressionTree(binder, limit) : null,
                     skipTree: skip !== null ? new JSBinder.#ExpressionTree(binder, skip) : null,
                 });
@@ -426,9 +447,9 @@ class JSBinder
                 const skip = item.skipTree !== null ? item.skipTree.evaluate() : null;
                 const limit = item.limitTree !== null ? item.limitTree.evaluate() : null;
 
-                //Create list of all idexes to include, filtered by 'where' if defined.
                 let indexes = [];
-
+                
+                // Create list of all idexes to include, filtered by 'where' if defined.
                 const source = binder.#get(item.list);
                 if (Array.isArray(source)) {
                     source.forEach((x, index) => {
@@ -437,12 +458,21 @@ class JSBinder
                     });
                 }
 
-                //Reduce list of indexes if 'skip' or 'limit' is defined
+                // Sort list of indexes if 'orderby' is defined.
+                if (item.orderby !== null) {
+                    indexes = indexes
+                        .map(index => ({ index, value : binder.#evaluate(item.orderby.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)) }))
+                        .sort((a, b) => a.value > b.value ? 1 : -1)
+                        .map(x => x.index);
+                }
+
+                // Reduce list of indexes if 'skip' or 'limit' is defined
                 if (skip !== null) indexes = indexes.slice(skip);
                 if (limit !== null) indexes = indexes.slice(0, limit);
 
-                //Calculate keys for each index.
                 let newKeys = [];
+
+                // Calculate keys for each index.
                 indexes.forEach((index) => {
                     const key = binder.#evaluate(item.key.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`))
                         .toString()
@@ -453,11 +483,11 @@ class JSBinder
                     newKeys.push(`${item.itemIndex}_${key}`);
                 });
 
-                //Compare keys to know what to add or remove.
+                // Compare keys to know what to add or remove.
                 const keysToRemove = item.keys.filter(whereNotIn(newKeys));
                 const keysToAdd = newKeys.filter(whereNotIn(item.keys));
 
-                //Remove existing items
+                // Remove existing items
                 item.keys.forEach((key, i) => {
                     if (keysToRemove.includes(key)) {
                         binder.#dispatchEvent(item.objs[i], "each", { action: "remove" });
@@ -467,30 +497,30 @@ class JSBinder
                     }
                 });
 
-                //Filtered lists to not include removed elements
+                // Filtered lists to not include removed elements
                 let existingKeys = item.keys.filter(whereNotNull);
                 let existingObjs = item.objs.filter(whereNotNull);
 
                 let lastObj = item.start; //Store reference to element to add new items after...
                 let newObjs = [];
 
-                newKeys.forEach((key, i) => {
+                newKeys.forEach((key) => {
                     let obj = null;
 
                     if (keysToAdd.includes(key)) {
-                        //Add new item
+                        // Add new item
                         obj = JSBinder.#deserializeHTML(item.html.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[{${key}}]`));
                         lastObj.after(obj);
                         binder.#dispatchEvent(obj, "each", { action: "add" });
                         counter++;
                     } else {
-                        //Reorder existing items if needed
+                        // Reorder existing items if needed
                         const index = existingKeys.indexOf(key);
                         obj = existingObjs[index];
 
-                        if (index > 0) lastObj.after(obj); //if object is not next of existing it needs to be moved to after "lastObj".
+                        if (index > 0) lastObj.after(obj); // If object is not next of existing it needs to be moved to after "lastObj".
 
-                        existingObjs.splice(index, 1); //removes object from list of old objects (unhandled objects).
+                        existingObjs.splice(index, 1); // Removes object from list of old objects (unhandled objects).
                         existingKeys.splice(index, 1);
                     }
 
@@ -560,18 +590,19 @@ class JSBinder
                 const from = item.fromTree.evaluate();
                 const to = item.toTree.evaluate();
 
-                //Create list of all keys/numbers to include, filtered by 'where' if defined.
                 let newKeys = [];
+                
+                // Create list of all keys/numbers to include, filtered by 'where' if defined.
                 for (let key = from; key <= to; key++) {
                     const valid = item.where === null || binder.#evaluate(item.where.replace(JSBinder.#rgxFormatVariable(item.alias), key));
                     if (valid) newKeys.push(key);
                 }
 
-                //Compare keys to know what to add or remove.
+                // Compare keys to know what to add or remove.
                 const keysToRemove = item.keys.filter(whereNotIn(newKeys));
                 const keysToAdd = newKeys.filter(whereNotIn(item.keys));
 
-                //Remove existing items
+                // Remove existing items
                 item.keys.forEach((key, i) => {
                     if (keysToRemove.includes(key)) {
                         binder.#dispatchEvent(item.objs[i], "for", { action: "remove" });
@@ -581,24 +612,24 @@ class JSBinder
                     }
                 });
 
-                //Filtered lists to not include removed elements
+                // Filtered lists to not include removed elements
                 let existingKeys = item.keys.filter(whereNotNull);
                 let existingObjs = item.objs.filter(whereNotNull);
 
-                let lastObj = item.start; //Store reference to element to add new items after...
+                let lastObj = item.start; // Store reference to element to add new items after...
                 let newObjs = [];
 
                 newKeys.forEach((key) => {
                     let obj = null;
 
                     if (keysToAdd.includes(key)) {
-                        //Add new item
+                        // Add new item
                         obj = JSBinder.#deserializeHTML(item.html.replace(JSBinder.#rgxFormatVariable(item.alias), key));
                         lastObj.after(obj);
                         binder.#dispatchEvent(obj, "for", { action: "add" });
                         counter++;
                     } else {
-                        //Existing items...
+                        // Existing items...
                         const index = existingKeys.indexOf(key);
                         obj = existingObjs[index];
                     }
@@ -655,22 +686,24 @@ class JSBinder
             const bind = (obj, value) => {
                 const isEmpty = JSBinder.#isEmpty(value);
                 const isTrue = Boolean(value);
-
-                switch (true)
+               
+                //ToDo: textarea
+                switch (JSBinder.#typeOf(obj))
                 {
-                    case obj.matches("input[type='checkbox']"):
+                    case JSBinder.#types.checkbox:
                         obj.toggleAttribute("checked", isTrue);
                         break;
 
-                    case obj.matches("input") || obj.matches("select"):
+                    case JSBinder.#types.input:
+                    case JSBinder.#types.select:
                         if (obj.value !== (isEmpty ? "" : String(value))) obj.value = isEmpty ? "" : String(value);
                         break;
 
-                    case obj.matches("img"):
+                    case JSBinder.#types.img:
                         obj.setAttribute("src", isEmpty ? null : value);
                         break;
 
-                    case obj.matches("iframe"):
+                    case JSBinder.#types.iframe:
                         obj.contentWindow.location.replace(isEmpty ? null : value);
                         break;
 
@@ -878,17 +911,17 @@ class JSBinder
                     const toSafeString = (input) => "'" + input.replace(/\'/g, "' + \"'\" + '") + "'";
 
                     //ToDo: textarea
-                    switch (true)
+                    switch (JSBinder.#typeOf(obj))
                     {
-                        case obj.matches("input[type='checkbox']"):
+                        case JSBinder.#types.checkbox:
                             binder.#addEvent(obj)("change", (e) => set(!!obj.checked));
                             break;
 
-                        case obj.matches("select"):
+                        case JSBinder.#types.select:
                             binder.#addEvent(obj)("change", (e) => set(obj.value ? toSafeString(obj.value) : null));
                             break;
 
-                        case obj.matches("input"):
+                        case JSBinder.#types.input:
                             binder.#addEvent(obj)("input", (e) => set(toSafeString(obj.value)));
                             break;
                     }

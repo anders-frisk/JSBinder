@@ -33,17 +33,17 @@ Supported parameters are:
 
 ## State
 Update state for JSBinder to work with.
+
+With an object:
 ```javascript
-let state = { title: "JSBinder", decription: "A JS library to make the DOM data-driven." };
-binder.setState(state);
+binder.setState({ title: "JSBinder", decription: "A JS library to make the DOM data-driven." });
+```
+
+Or modify current state with a function returning an object:
+```javascript
+binder.SetState((current) => ({ items : [...current.items, "new item"] }));
 ```
 A call to `.setState()` will let JSBinder know a refresh of the DOM is needed and will be triggered async. Updates can be partial, only members specified will be updated. <!-- In this example `title` keeps its value. -->
-
-<!--
-```javascript
-binder.setState({ decription: "This is an updated description." });
-```
--->
 
 # Directives
 You can attach one or more directives to any HTML element by adding `data-*` attributes containing [expressions](#Expressions).
@@ -140,8 +140,7 @@ Result:
 ```
 
 
-**Where**
-
+**Where**<br />
 Filter list by adding a `data-where="expression"`.
 
 `data-where="planets[@index].type == 'Gas'"` will result in a list containing '**Jupiter**' and '**Saturn**'.
@@ -175,15 +174,18 @@ Result:
 ```
 
 
-**Where, Skip & Limit**
+**Where, Skip, Limit & OrderBy**<br />
+Filter list by adding a `data-where="expression"`.<br />
+Limit to a subrange by `data-skip="expression"` and `data-limit="expression"`.<br />
+Sort by `data-orderby="expression"`. 
 
-Filter list by adding a `data-where="expression"` and/or limit to a subrange by adding `data-skip="expression"` and `data-limit="expression"`. 
-
-*Where, skip and limit can be used independently.*
+*Where, skip, limit and orderby can be used independently or in any combination.*
 
 `data-where="@planet.type == 'Ice'"` will result in a list containing '**Uranus**' and '**Neptune**'.
 
 `data-skip="2" data-limit="3"` will result in a list containing '**Venus**', '**Earth**' and '**Mars**'.
+
+`data-orderby="@planet.diameter"` will result in a sorted list from smallest to largest planet.
 
 
 **Events**<br />
@@ -261,7 +263,8 @@ Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = proper
 
 
 # Reversed Directives
-The following directives are used to update state in response to user interactions with the DOM.
+The following directives are used to update state in response to user interactions.<br />
+For more advanced updates, plain JavaScript events and `binder.setState(...)` is recomended.
 
 ## OnClick
 Adds functionallity to update state with new data from an onclick event.<br />
