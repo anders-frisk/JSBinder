@@ -735,7 +735,7 @@ class JSBinder
 
             binder.#findDirectives($attr, (obj) => {
                 JSBinder.#split(JSBinder.#pop(obj)($attr)).forEach((mapping) => {
-                    const m = mapping.match(new RegExp("^" + "(['\"])" + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                    const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
 
                     if (!m)
                         return JSBinder.#error(`incorrect 'attribute' syntax: ${mapping}`);
@@ -789,7 +789,7 @@ class JSBinder
 
             binder.#findDirectives($class, (obj) => {
                 JSBinder.#split(JSBinder.#pop(obj)($class)).forEach((mapping) => {
-                    const m = mapping.match(new RegExp("^" + "(['\"])" + `(${JSBinder.#rgxClass})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                    const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxClass})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
 
                     if (!m)
                         return JSBinder.#error(`incorrect 'class' syntax: ${mapping}`);
@@ -831,7 +831,7 @@ class JSBinder
 
             binder.#findDirectives($style, (obj) => {
                 JSBinder.#split(JSBinder.#pop(obj)($style)).forEach((mapping) => {
-                    const m = mapping.match(new RegExp("^" + "(['\"])" + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                    const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
 
                     if (!m)
                         return JSBinder.#error(`incorrect 'style' syntax: ${mapping}`);
