@@ -6,7 +6,12 @@ class JSBinder
         if (!JSBinder.#isPlainObject(options))
             return JSBinder.#error(`options must be an object`);
 
-        this.#settings = { root: document, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000, ...options };
+        this.#settings = { root: document.body, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000, interpolation: ["{{", "}}"], ...options };
+        
+        if (this.#settings.root.attributes.hasOwnProperty("data-jsbinder"))
+            return JSBinder.#error('an instance of JSBinder already exists on this root');
+
+        this.#settings.root.dataset.jsbinder = "";
 
         this.#abortController = new AbortController();
 
@@ -28,8 +33,8 @@ class JSBinder
     static #isPlainObject = (obj) => obj !== null && typeof obj === 'object' && !Array.isArray(obj);
     static #isEmpty = (x) => [undefined, null, ""].includes(x);
 
-    static #toKebabCase = (text) => text.trim().replace(new RegExp("([a-z])([A-Z])", "g"), (_, a, b) => `${a}-${b.toLowerCase()}`); //"marginTop" >> "margin-top"
-    static #toCamelCase = (text) => text.trim().replace(new RegExp("([a-z])-([a-z])", "g"), (_, a, b) => `${a}${b.toUpperCase()}`); //"margin-top" >> "marginTop"
+    static #toKebabCase = (text) => text.trim().replace(new RegExp("([a-z])([A-Z])", "g"), (_, a, b) => `${a}-${b.toLowerCase()}`); // "marginTop" >> "margin-top"
+    static #toCamelCase = (text) => text.trim().replace(new RegExp("([a-z])-([a-z])", "g"), (_, a, b) => `${a}${b.toUpperCase()}`); // "margin-top" >> "marginTop"
 
     static #pop = (obj) => (...keys) => JSBinder.#listOrSingle(keys.map(key => { const data = obj.dataset[JSBinder.#toCamelCase(key)]?.trim().replace(new RegExp("\\s\\s+", "g"), " ") ?? null; obj.removeAttribute(`data-${key}`); return data; }));
     static #split = (input) => input.split(";").map(x => x.trim()).filter(x => x !== "");
@@ -40,8 +45,10 @@ class JSBinder
 
     static #deserializeHTML = (html) => { let t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstChild; };
 
-    // Left-to-right function composition.
-    // JSBinder.#pipe(f1, f2, f3)(x) >> f3(f2(f1(x)));
+    // ".*+" >> "\\.\\*\\+"
+    static #escapeRgx = (string) => { return string.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&'); };
+
+    // Left-to-right function composition. JSBinder.#pipe(f1, f2, f3)(x) >> f3(f2(f1(x)));
     static #pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
 
     static #using = (...x) => (f) => f(...x);
@@ -113,11 +120,11 @@ class JSBinder
         }
     };
 
-    // myJSBinder.addFunction("round", (x) => Math.round(x)); >> <span data-bind="#round(5.55)"></span> >> <span>6</span>
+    // myJSBinder.addFunction("round", (x) => Math.round(x)); >> <span>{{#round(5.55)}}</span> >> <span>6</span>
     // myJSBinder.addFunction("abs", function (x) { return Math.abs(x) });
     addFunction = (name, method) => {
-        if (!name.match(new RegExp("^" + JSBinder.#rgxVar + "$")))
-            return JSBinder.#error(`addFunction 'name' must match '${JSBinder.#rgxVar}'`);
+        if (!name.match(new RegExp("^" + JSBinder.#RGX_VAR + "$")))
+            return JSBinder.#error(`addFunction 'name' must match '${JSBinder.#RGX_VAR}'`);
 
         if (typeof method !== "function" || method.length !== 1)
             return JSBinder.#error(`addFunction 'method' must be a function with a single argument`);
@@ -137,9 +144,9 @@ class JSBinder
         };
 
         static #operators = ["?", ":", "(", ")", "!!", "!", "~", "<<", ">>", ">>>", "**", "*", "/", "%", "+", "-", ">=", ">", "<=", "<", "===", "==", "!==", "!=", "&", "^", "|", "&&", "||", "??"];
-        static #rgxAnyOperator = new RegExp("(" + this.#operators.sort((a,b) => b.length - a.length).map((x) => x.replace(new RegExp("[.*+?^${}()|\\[\\]\\\\]", "g"), '\\$&')).join("|") + ")", "g");
+        static #rgxAnyOperator = new RegExp("(" + this.#operators.sort((a,b) => b.length - a.length).map(JSBinder.#escapeRgx).join("|") + ")", "g");
 
-        static #isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^" + "#" + JSBinder.#rgxVar + "$"));
+        static #isFunction = (x) => typeof x === "string" && !!x.match(new RegExp("^" + "#" + JSBinder.#RGX_VAR + "$"));
         static #isOperator = (x) => typeof x === "string" && this.#operators.includes(x);
 
         // Recusive parse and build an expression tree / Abstract Syntax Tree (AST) from an string expression in order of operator precedence.
@@ -293,25 +300,25 @@ class JSBinder
     #evaluate = (expression) => (new JSBinder.#ExpressionTree(this, expression)).evaluate();
 
 
-    static #type = { CHECKBOX: "checkbox", INPUT: "input", SELECT: "select", IMG: "img", IFRAME: "iframe" };
+    static #Type = { CHECKBOX: "checkbox", INPUT: "input", SELECT: "select", IMG: "img", IFRAME: "iframe" };
 
     static #typeOf = (obj) => {
-        if (obj.matches("input[type='checkbox']")) return JSBinder.#type.CHECKBOX;
-        if (obj.matches("input")) return JSBinder.#type.INPUT;
-        if (obj.matches("select")) return JSBinder.#type.SELECT;
-        if (obj.matches("img")) return JSBinder.#type.IMG;
-        if (obj.matches("iframe")) return JSBinder.#type.IFRAME;
+        if (obj.matches("input[type='checkbox']")) return JSBinder.#Type.CHECKBOX;
+        if (obj.matches("input")) return JSBinder.#Type.INPUT;
+        if (obj.matches("select")) return JSBinder.#Type.SELECT;
+        if (obj.matches("img")) return JSBinder.#Type.IMG;
+        if (obj.matches("iframe")) return JSBinder.#Type.IFRAME;
         return null;
     };
 
 
-    static #rgxVar = "[a-zA-Z]{1}[0-9a-zA-Z_]*";
-    static #rgxClass = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
-    static #rgxAttr = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
-    static #rgxInt = "[0-9]+";
-    static #rgxIndexKey = "{[a-zA-Z0-9_]+\\}";
-    static #rgxExp = ".+";
-    static #rgxPath = JSBinder.#rgxVar + "(?:" + "(?:" + [`\\[${JSBinder.#rgxInt}\\]`, `\\[@${JSBinder.#rgxVar}\\]`, `\\[${JSBinder.#rgxIndexKey}\\]`, "\\."].join("|") + ")" + `(?:${JSBinder.#rgxVar})?` + ")*";
+    static #RGX_VAR = "[a-zA-Z]{1}[0-9a-zA-Z_]*";
+    static #RGX_CLASS = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
+    static #RGX_ATTR = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
+    static #RGX_INT = "[0-9]+";
+    static #RGX_INDEX_KEY = "{[a-zA-Z0-9_]+\\}";
+    static #RGX_EXP = ".+";
+    static #RGX_PATH = JSBinder.#RGX_VAR + "(?:" + "(?:" + [`\\[${JSBinder.#RGX_INT}\\]`, `\\[@${JSBinder.#RGX_VAR}\\]`, `\\[${JSBinder.#RGX_INDEX_KEY}\\]`, "\\."].join("|") + ")" + `(?:${JSBinder.#RGX_VAR})?` + ")*";
 
     static #rgxFormatVariable = (key) => new RegExp("@" + key + "\\b", "g");
 
@@ -320,11 +327,20 @@ class JSBinder
     #mapAttributes = (...keys) => JSBinder.#listOrSingle(keys.map(key => (this.#settings.prefix ? `${this.#settings.prefix}-` : "") + key));
 
     // Helper function to find directives in the DOM not inside a template or other directive.
-    #findDirectives = (directive, tag  = "") => (callback) => {
+    #findDirectives = (directive, selector  = "") => (callback) => {
         const [$if, $each, $for] = this.#mapAttributes("if", "each", "for");
-
-        [...this.#settings.root.querySelectorAll(`${tag}[data-${directive}]`)]
+        [...this.#settings.root.querySelectorAll(`${selector}[data-${directive}]`)]
             .filter((obj) => ![`[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`].some(x => !!obj.parentNode.closest(x)))
+            .filter((obj) => obj.closest("[data-jsbinder]") === this.#settings.root)
+            .forEach((obj) => callback(obj));
+    };
+
+    // Helper function to find childNodes of parent not inside a template or other directive.
+    #findChildNodes = (parent) => (callback) => {
+        const [$if, $each, $for] = this.#mapAttributes("if", "each", "for");
+        [...parent.childNodes]
+            .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || ![`[data-${$if}]`, `[data-${$each}]`, `[data-${$for}]`, `template`].some(x => !!obj.matches(x)))
+            .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !obj.matches("[data-jsbinder]"))
             .forEach((obj) => callback(obj));
     };
 
@@ -388,10 +404,10 @@ class JSBinder
 
     // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-orderby="..."]
     //
-    // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item" data-bind="@item" />                                     >> <p>a</p><p>b</p>...
-    // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title" data-bind="@item.title" />                         >> <p>a</p>...
-    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-bind="@number" data-where="@number > 3" />    >> <p>4</p><p>5</p>...
-    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-skip="1" data-limit="2" />                    >> <p>2</p><p>3</p>
+    // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item">{{@item}}</p>                                        >> <p>a</p><p>b</p>...
+    // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title">{{@item.title}}</p>                            >> <p>a</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-where="@number > 3">{{@number}}</p>       >> <p>4</p><p>5</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-skip="1" data-limit="2">{{@number}}</p>   >> <p>2</p><p>3</p>
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
     #eachDirective = ((binder) => new class {
@@ -413,7 +429,7 @@ class JSBinder
                     if (key === null)
                         return JSBinder.#error("'each' must have 'key' expression defined");
 
-                    const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgxVar})` + "\\s+" + "in" + "\\s+" + "(" + JSBinder.#rgxPath + ")" + "$"));
+                    const m = expression.match(new RegExp("^" + `@(${JSBinder.#RGX_VAR})` + "\\s+" + "in" + "\\s+" + "(" + JSBinder.#RGX_PATH + ")" + "$"));
 
                     if (!m)
                         return JSBinder.#error(`incorrect 'each' expression: ${expression}`);
@@ -538,9 +554,9 @@ class JSBinder
 
     // data-for="@value" data-from="..." data-to="..." [data-where="..."]
     //
-    // <p data-for="@index" data-from="0" data-to="myArray.length" data-bind="myArray[@index]" /> >> ...
-    // <p data-for="@number" data-from="3" data-to="7" data-bind="@number" /> >> <p>3</p><p>4</p>...<p>7</p>
-    // <p data-for="@number" data-from="1" data-to="7" data-where="@number % 2 == 0" data-bind="@number" /> >> <p>2</p><p>4</p><p>6</p>
+    // <p data-for="@index" data-from="0" data-to="myArray.length">{{myArray[@index]}}</p>              >> ...
+    // <p data-for="@number" data-from="3" data-to="7">{{@number}}</p>                                  >> <p>3</p><p>4</p>...<p>7</p>
+    // <p data-for="@number" data-from="1" data-to="7" data-where="@number % 2 == 0">{{@number}}</p>    >> <p>2</p><p>4</p><p>6</p>
     //
     // event: jsbinder-for with e.detail.action = "add" / "remove".
     #forDirective = ((binder) => new class {
@@ -561,7 +577,7 @@ class JSBinder
                     if (from === null || to === null)
                         return JSBinder.#error("'for' must have 'from' and 'to' expressions defined");
 
-                    const m = expression.match(new RegExp("^" + `@(${JSBinder.#rgxVar})` + "$"));
+                    const m = expression.match(new RegExp("^" + `@(${JSBinder.#RGX_VAR})` + "$"));
 
                     if (!m)
                         return JSBinder.#error(`incorrect 'for' expression: ${expression}`);
@@ -647,6 +663,97 @@ class JSBinder
         };
     })(this);
 
+    // <div>{{details.title}}</div>
+    // <a href="{{link.url}}">{{link.title}}</a>
+    // <div>{{cart.lenght}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
+    //
+    // event: jsbinder-attr with e.detail.key = attribute key and e.detail.value = value.
+    //        jsbinder-bind with e.detail.value = value. (e.target = parentNode)
+    #interpolations = ((binder) => new class {
+        #items = [];
+        #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
+
+        scan = () => {
+            this.#cleanup();
+
+            let counter = 0;
+
+            const [rgx_l, rgx_r] = binder.#settings.interpolation.map(JSBinder.#escapeRgx);
+
+            const rgx_interpolation = new RegExp(rgx_l + "(.+?)" + rgx_r, "g");
+
+            // "aa {{bb}} cc {{dd}} ee" >> "aa {0} cc {1} ee"
+            const prepareString = (input) => JSBinder.#using(0)((index) => input.replace(rgx_interpolation, () => `{${index++}}`));
+
+            // "{{aa}}" >> "aa"
+            const trimExpression = (x) => x.replace(new RegExp("^" + rgx_l), "").replace(new RegExp(rgx_r + "$"), "").trim();
+
+            const recurse = (element) => {
+                if (element.nodeType === Node.TEXT_NODE) {
+                    const m = element.textContent.match(rgx_interpolation);
+
+                    if (m) {
+                        this.#items.push({
+                            obj: element,
+                            type: "text",
+                            expressions: [...m].map(trimExpression),
+                            text: prepareString(element.textContent.trim()),
+                            modified: new JSBinder.#ModifiedMemo(),
+                        });
+                        element.textContent = ""; //Clear...
+                        counter++;
+                    }
+                }
+
+                if (element.nodeType === Node.ELEMENT_NODE) {
+                    const attributes = element.attributes;
+                    for (let i = 0; i < attributes.length; i++) {
+                        const m = attributes[i].value.match(rgx_interpolation);
+
+                        if (m) {
+                            this.#items.push({
+                                obj: element,
+                                type: "attribute",
+                                expressions: [...m].map(trimExpression),
+                                key: attributes[i].name,
+                                text: prepareString(attributes[i].value),
+                                modified: new JSBinder.#ModifiedMemo(),
+                            });
+                            element.setAttribute(attributes[i].name, ""); //Clear...
+                            counter++;
+                        }
+                    }
+                }
+
+                if (element.nodeType === Node.DOCUMENT_NODE || element.nodeType === Node.ELEMENT_NODE) binder.#findChildNodes(element)(x => recurse(x));
+            };
+            
+            recurse(binder.#settings.root);
+
+            return counter;
+        };
+
+        update = () => {
+            this.#items.forEach((item) => {
+                const result = item.expressions.reduce((text, expression, index) => text.replace("{"+index+"}", binder.#evaluate(expression)), item.text) ?? "";
+                if (item.modified.check(result)) {
+                    switch (item.type)
+                    {
+                        case "text":
+                            item.obj.textContent = result;
+                            binder.#dispatchEvent(item.obj.parentNode, "bind", { value: result });
+                            break;
+
+                        case "attribute":
+                            item.obj.setAttribute(item.key, result);
+                            binder.#dispatchEvent(item.obj, "attr", { key: item.key, value: result });
+                            break;
+                    }
+                }
+            });
+        };
+    })(this);
+
     // data-bind='data.title'
     //
     // <div data-bind="..." /> >> <div>...</div>
@@ -663,59 +770,70 @@ class JSBinder
 
             const $bind = binder.#mapAttributes("bind");
 
+            const getDomDepth = (node) => Array.from(function* (n) { while (n.parentElement) yield (n = n.parentElement); }(node)).length;
+
             binder.#findDirectives($bind)
                 ((obj) => {
                     const expression = JSBinder.#pop(obj)($bind);
-                    const type = JSBinder.#using(JSBinder.#typeOf(obj))((t) => [JSBinder.#type.SELECT].includes(t) ? t : null);
 
                     this.#items.push({
                         obj, 
                         expressionTree: new JSBinder.#ExpressionTree(binder, expression),
                         modified: new JSBinder.#ModifiedMemo(), 
-                        type,
+                        depth: getDomDepth(obj),
                     });
                 });
         };
 
         update = () => {
-            const updateItem = (item) => {
+            this.#items.sort((a, b) => b.depth - a.depth).forEach((item) => {
                 const result = item.expressionTree.evaluate();
-                if (item.modified.check(result) || (item.type === JSBinder.#type.SELECT && item.obj.value !== (JSBinder.#isEmpty(result) ? "" : String(result)))) { // SELECT jämförelsen måste ske med "stringResult" // +Input +Checkbox +...  Eller behöver dessa verkligen kollas extra?
-                    bind(item.obj, result);
-                    binder.#dispatchEvent(item.obj, "bind", { value: result });
-                }
-            };
 
-            const bind = (obj, value) => {
-                //ToDo: textarea
-                switch (JSBinder.#typeOf(obj))
+                switch (JSBinder.#typeOf(item.obj))
                 {
-                    case JSBinder.#type.CHECKBOX:
-                        obj.toggleAttribute("checked", !!value);
+                    case JSBinder.#Type.CHECKBOX:
+                        if (item.modified.check(result)) {
+                            item.obj.toggleAttribute("checked", !!result);
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
                         break;
 
-                    case JSBinder.#type.INPUT:
-                    case JSBinder.#type.SELECT:
-                        obj.value = JSBinder.#isEmpty(value) ? "" : String(value);
+                    case JSBinder.#Type.SELECT:
+                        if (item.modified.check(result) || item.obj.value !== (JSBinder.#isEmpty(result) ? "" : String(result))) {
+                            item.obj.value = JSBinder.#isEmpty(result) ? "" : String(result);
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
+                        break;
+                        
+                    case JSBinder.#Type.INPUT:
+                        if (item.modified.check(result)) {
+                            item.obj.value = JSBinder.#isEmpty(result) ? "" : String(result);
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
                         break;
 
-                    case JSBinder.#type.IMG:
-                        obj.setAttribute("src", JSBinder.#isEmpty(value) ? null : value);
+                    case JSBinder.#Type.IMG:
+                        if (item.modified.check(result)) {
+                            item.obj.setAttribute("src", JSBinder.#isEmpty(result) ? null : result);
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
                         break;
 
-                    case JSBinder.#type.IFRAME:
-                        obj.contentWindow.location.replace(JSBinder.#isEmpty(value) ? null : value);
+                    case JSBinder.#Type.IFRAME:
+                        if (item.modified.check(result)) {
+                            item.obj.contentWindow.location.replace(JSBinder.#isEmpty(result) ? null : result);
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
                         break;
 
                     default:
-                        obj.innerHTML = JSBinder.#isEmpty(value) ? "" : value; //String(value) ???
+                        if (item.modified.check(result)) {
+                            item.obj.innerHTML = JSBinder.#isEmpty(result) ? "" : result; //String(value) ???
+                            binder.#dispatchEvent(item.obj, "bind", { value: result });
+                        }
                         break;
                 }
-            };
-
-            // <select> must be binded after any other binds if <option> depends on 'data-each' or 'data-for' etc.
-            this.#items.filter(x => x.type === null).forEach((item) => updateItem(item));
-            this.#items.filter(x => x.type === "select").forEach((item) => updateItem(item));
+            });
         };
     })(this);
 
@@ -723,7 +841,7 @@ class JSBinder
     // data-attr="'title' : data.title; 'src' : data.url"
     // data-disabled="valid !== true"
     //
-    // event: jsbinder-attr with e.detail.key = attribute key.
+    // event: jsbinder-attr with e.detail.key = attribute key and e.detail.value = value.
     #attributeDirective = ((binder) => new class {
         #items = [];
         #cleanup = () => { this.#items = this.#items.filter((x) => document.body.contains(x.obj)); };
@@ -736,7 +854,7 @@ class JSBinder
             binder.#findDirectives($attr)
                 ((obj) => {
                     JSBinder.#split(JSBinder.#pop(obj)($attr)).forEach((mapping) => {
-                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#RGX_ATTR})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#RGX_EXP})` + "$"));
 
                         if (!m)
                             return JSBinder.#error(`incorrect 'attribute' syntax: ${mapping}`);
@@ -792,7 +910,7 @@ class JSBinder
             binder.#findDirectives($class)
                 ((obj) => {
                     JSBinder.#split(JSBinder.#pop(obj)($class)).forEach((mapping) => {
-                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxClass})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#RGX_CLASS})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#RGX_EXP})` + "$"));
 
                         if (!m)
                             return JSBinder.#error(`incorrect 'class' syntax: ${mapping}`);
@@ -835,7 +953,7 @@ class JSBinder
             binder.#findDirectives($style)
                 ((obj) => {
                     JSBinder.#split(JSBinder.#pop(obj)($style)).forEach((mapping) => {
-                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#rgxAttr})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                        const m = mapping.match(new RegExp("^" + `(['"])` + `(${JSBinder.#RGX_ATTR})` + "\\1" + "\\s+" + ":" + "\\s+" + `(${JSBinder.#RGX_EXP})` + "$"));
 
                         if (!m)
                             return JSBinder.#error(`incorrect 'style' syntax: ${mapping}`);
@@ -864,6 +982,7 @@ class JSBinder
 
     #addEvent = (obj) => (type, listener) => obj.addEventListener(type, listener, { 'signal': this.#abortController.signal });
 
+    // <button data-onclick="page = 0">First page</button>
     // data-onclick="path1 = expression1; path2 = expression2"
     #onClickDirective = ((binder) => new class {
         scan = () => {
@@ -872,7 +991,7 @@ class JSBinder
             binder.#findDirectives($onclick)
                 ((obj) => {
                     JSBinder.#split(JSBinder.#pop(obj)($onclick)).forEach((mapping) => {
-                        const m = mapping.match(new RegExp("^" + `(${JSBinder.#rgxPath})` + "\\s+" + "=" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                        const m = mapping.match(new RegExp("^" + `(${JSBinder.#RGX_PATH})` + "\\s+" + "=" + "\\s+" + `(${JSBinder.#RGX_EXP})` + "$"));
 
                         if (!m)
                             return JSBinder.#error(`incorrect 'onclick' syntax: ${mapping}`);
@@ -890,6 +1009,7 @@ class JSBinder
         };
     })(this);
 
+    // <input type="text" data-onchange="name = @value" data-bind="name" />
     // data-onchange="path1 = expression1; path2 = expression2"
     #onChangeDirective = ((binder) => new class {
         scan = () => {
@@ -901,7 +1021,7 @@ class JSBinder
                         return JSBinder.#error(`'onchange' directive is only supported for <select> and <input>`);
 
                     JSBinder.#split(JSBinder.#pop(obj)($onchange)).forEach((mapping) => {
-                        const m = mapping.match(new RegExp("^" + `(${JSBinder.#rgxPath})` + "\\s+" + "=" + "\\s+" + `(${JSBinder.#rgxExp})` + "$"));
+                        const m = mapping.match(new RegExp("^" + `(${JSBinder.#RGX_PATH})` + "\\s+" + "=" + "\\s+" + `(${JSBinder.#RGX_EXP})` + "$"));
 
                         if (!m)
                             return JSBinder.#error(`incorrect 'onchange' syntax: ${mapping}`);
@@ -918,15 +1038,15 @@ class JSBinder
                         //ToDo: textarea
                         switch (JSBinder.#typeOf(obj))
                         {
-                            case JSBinder.#type.CHECKBOX:
+                            case JSBinder.#Type.CHECKBOX:
                                 binder.#addEvent(obj)("change", (e) => set(!!obj.checked));
                                 break;
 
-                            case JSBinder.#type.SELECT:
+                            case JSBinder.#Type.SELECT:
                                 binder.#addEvent(obj)("change", (e) => set(obj.value ? toSafeString(obj.value) : null));
                                 break;
 
-                            case JSBinder.#type.INPUT:
+                            case JSBinder.#Type.INPUT:
                                 binder.#addEvent(obj)("input", (e) => set(toSafeString(obj.value)));
                                 break;
                         }
@@ -939,7 +1059,7 @@ class JSBinder
     //
     // <template data-template="tree">
     //   <li data-each="@item in @data">
-    //     <span data-bind="@item.title"></span>
+    //     <span>{{@item.title}}</span>
     //     <ul data-render="tree" data-source="@item.items"></ul>
     //   </li>
     // </template>
@@ -958,8 +1078,8 @@ class JSBinder
                     const key = JSBinder.#pop(obj)($template);
                     const html = JSBinder.#cleanHTML(obj.innerHTML);
                     
-                    if (!key.match(new RegExp("^" + JSBinder.#rgxVar + "$")))
-                        return JSBinder.#error(`template 'key' must match '${JSBinder.#rgxVar}'`);
+                    if (!key.match(new RegExp("^" + JSBinder.#RGX_VAR + "$")))
+                        return JSBinder.#error(`template 'key' must match '${JSBinder.#RGX_VAR}'`);
                     
                     obj.remove();
 
@@ -1016,13 +1136,13 @@ class JSBinder
     });
 
     #scan = () => {
-        [this.#templates, this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective, this.#onClickDirective, this.#onChangeDirective].forEach(x => x.scan());
+        [this.#templates, this.#ifDirective, this.#eachDirective, this.#forDirective, this.#interpolations, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective, this.#onClickDirective, this.#onChangeDirective].forEach(x => x.scan());
         this.#update();
     };
 
     #update = () => {
         let count = 0;
-        [this.#ifDirective, this.#eachDirective, this.#forDirective, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective].forEach(x => count += x.update() ?? 0);
+        [this.#ifDirective, this.#eachDirective, this.#forDirective, this.#interpolations, this.#bindDirective, this.#attributeDirective, this.#classDirective, this.#styleDirective].forEach(x => count += x.update() ?? 0);
         if (count === 0) count += this.#templates.render();
         if (count > 0) this.#scan();
     };
@@ -1031,6 +1151,7 @@ class JSBinder
         this.#highFrequencyController.stop();
         this.#lowFrequencyController.stop();
         this.#abortController.abort();
+        this.#settings.root.removeAttribute("data-jsbinder");
         JSBinder.#info("Instance disposed!");
     };
 

@@ -27,8 +27,9 @@ const binder = new JSBinder(options);
 ```
 
 Supported parameters are:
-- **root**: DOM pointer to the element `binder.scan()` starts from. Default `document`.
-- **prefix**: A prefix can be added to be able to use multiple instances of JSBinder or to avoid conflicts with other libraries. `prefix: 'xyz'` will change the attributes to `<div data-xyz-bind='...'></div>` etc.
+- **root**: DOM pointer to the element `binder.scan()` starts from. Default `document.body`.
+- **prefix**: Add a prefix to avoid conflicts with other libraries. `prefix: 'xyz'` will change the attributes to `<div data-xyz-bind='...'></div>` etc.
+- **interpolation**: Set custom start and end tags to avoid conflicts with other libraries. Default `["{{", "}}"]`.
 
 
 ## State
@@ -69,6 +70,12 @@ Result:
 <div>JSBinder</div>
 ```
 
+Text updates can also be made with interpolation syntax `{{...}}`.
+
+```html
+<div>{{cart.lenght}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
+```
+
 **Events**<br />
 Bind triggers the [event](#Events) `jsbinder-bind` with `e.detail.value = value`.<br />
 
@@ -82,8 +89,8 @@ binder.setState({ tab: 'a' });
 
 ```html
 <ul>
-  <li onclick="binder.setState({tab: 'a'})">A</li>
-  <li onclick="binder.setState({tab: 'b'})">B</li>
+  <li data-onclick="tab = 'a'">A</li>
+  <li data-onclick="tab = 'b'">B</li>
 </ul>
 <div data-if="tab === 'a'">Panel A</div>
 <div data-if="tab === 'b'">Panel B</div>
@@ -92,8 +99,8 @@ binder.setState({ tab: 'a' });
 Result:
 ```html
 <ul>
-  <li onclick="binder.setState={tab: 'a'}">A</li>
-  <li onclick="binder.setState={tab: 'b'}">B</li>
+  <li>A</li>
+  <li>B</li>
 </ul>
 <div>Panel A</div>
 <!-- if -->
@@ -123,7 +130,7 @@ binder.setState({ planets });
 
 ```html
 <ul>
-  <li data-for="@index" data-from="0" data-to="planets.length - 1" data-bind="planets[@index].name" />
+  <li data-for="@index" data-from="0" data-to="planets.length - 1">{{planets[@index].name}}</li>
 </ul>
 ```
 
@@ -157,7 +164,7 @@ For triggers the [event](#Events) `jsbinder-for` with `e.detail.action = "add" /
 
 ```html
 <ul>
-  <li data-each="@planet in planets" data-key="@planet.name" data-bind="@planet.name" />
+  <li data-each="@planet in planets" data-key="@planet.name">{{@planet.name}}</li>
 </ul>
 ```
 
@@ -208,6 +215,12 @@ Result:
 <img src='earth.jpeg' title='Earth' />
 ```
 
+Attribute updates can also be made with `{{...}}` syntax:
+
+```html
+<img src="{{details.img}}" title="{{details.title}}" />
+```
+
 
 **Custom attribute implementations**
 
@@ -228,7 +241,7 @@ binder.setState({ details: { title: "Earth", type: "Terrestrial" }});
 ```
 
 ```html
-<div data-bind="details.title" data-class="'terrestrial_planet' : details.type == 'Terrestrial'"></div>
+<div data-class="'terrestrial_planet' : details.type == 'Terrestrial'">{{details.title}}</div>
 ```
 
 Result:
@@ -249,7 +262,7 @@ binder.setState({ details: { title: "Earth", color: "#0000FF" }});
 ```
 
 ```html
-<div data-bind="details.title" data-style="'color' : details.color"></div>
+<div data-style="'color' : details.color">{{details.title}}</div>
 ```
 
 Result:
@@ -260,6 +273,10 @@ Result:
 
 **Events**<br />
 Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = property` and `e.detail.value = value`.
+
+
+## Value
+ToDo....
 
 
 # Reversed Directives
@@ -314,7 +331,7 @@ Expressions can besides accessing the state handle the following standard JavaSc
 `binder.addFunction(functionname, (x) => {})` can be added to extend functionallity in the expression evaluator.<br />
 Function is used in expressions with `#functionname(...)`.
 
-`binder.addFunction("round", (x) => Math.round(x));` and `<span data-bind="#round(5.55)"></span>` reslults in `<span>6</span>`.
+`binder.addFunction("round", (x) => Math.round(x));` and `<span>{{#round(5.55)}}</span>` reslults in `<span>6</span>`.
 
 
 # Events
@@ -340,7 +357,7 @@ binder.setState({
 ```html
 <select data-bind='type_filter' data-onchange="type_filter = @value">
   <option value="">All</option>
-  <option data-each="@x in type_filters" data-key="@x" data-bind="@x" data-attr="'value' : @x"></option>
+  <option data-each="@x in type_filters" data-key="@x" value="{{@x}}">{{@x}}</option>
 </select>
 <table>
   <tr>
@@ -349,9 +366,9 @@ binder.setState({
     <th>Type</th>
   </tr>
   <tr data-each="@x in planets" data-key="@x.name" data-where="type_filter === '' || @x.type === type_filter">
-    <td data-bind="@x.name"></td>
-    <td data-bind="@x.diameter"></td>
-    <td data-bind="@x.type"></td>
+    <td>{{@x.name}}</td>
+    <td>{{@x.diameter}}</td>
+    <td>{{@x.type}}</td>
   </tr>
 </table>
 ```
@@ -376,12 +393,12 @@ binder.setState({
     <th>Type</th>
   </tr>
   <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize">
-    <td data-bind="planets[@i].name"></td>
-    <td data-bind="planets[@i].diameter"></td>
-    <td data-bind="planets[@i].type"></td>
+    <td>{{@x.name}}</td>
+    <td>{{@x.diameter}}</td>
+    <td>{{@x.type}}</td>
   </tr>
 </table>
-<button data-for="@page" data-from="1" data-to="#ceil(planets.length / pagesize)" data-bind="@page" data-onclick="page = @page - 1"></button>
+<button data-for="@page" data-from="1" data-to="#ceil(planets.length / pagesize)" data-onclick="page = @page - 1">{{@page}}</button>
 ```
 
 
@@ -417,7 +434,7 @@ binder.setState({ tree });
 ```html
 <template data-template="tree">
   <li data-each="@item in @data" data-key="@item.title">
-    <span data-bind="@item.title"></span>
+    <span>{{@item.title}}</span>
     <ul data-if="@item.items.length > 0" data-render="tree" data-source="@item.items"></ul>
   </li>
 </template>
