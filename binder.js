@@ -402,7 +402,7 @@ class JSBinder
         };
     })(this);
 
-    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-orderby="..."]
+    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-orderby="..."] [data-distinct="..."]
     //
     // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item">{{@item}}</p>                                        >> <p>a</p><p>b</p>...
     // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title">{{@item.title}}</p>                            >> <p>a</p>...
@@ -418,11 +418,11 @@ class JSBinder
         scan = () => {
             this.#cleanup();
 
-            const [$each, $key, $where, $skip, $limit, $orderby] = binder.#mapAttributes("each", "key", "where", "skip", "limit", "orderby");
+            const [$each, $key, $where, $skip, $limit, $orderby, $distinct] = binder.#mapAttributes("each", "key", "where", "skip", "limit", "orderby", "distinct");
 
             binder.#findDirectives($each)
                 ((obj) => {
-                    const [expression, key, where, skip, limit, orderby] = JSBinder.#pop(obj)($each, $key, $where, $skip, $limit, $orderby);
+                    const [expression, key, where, skip, limit, orderby, distinct] = JSBinder.#pop(obj)($each, $key, $where, $skip, $limit, $orderby, $distinct);
                     const html = JSBinder.#cleanHTML(obj.outerHTML);
                     const [start, end] = JSBinder.#replaceObject(obj)(document.createComment("each"), document.createComment("/each"));
 
@@ -447,6 +447,7 @@ class JSBinder
                         list, 
                         where,
                         orderby,
+                        distinct,
                         limitTree: limit !== null ? new JSBinder.#ExpressionTree(binder, limit) : null,
                         skipTree: skip !== null ? new JSBinder.#ExpressionTree(binder, skip) : null,
                     });
@@ -480,6 +481,12 @@ class JSBinder
                         .map(index => ({ index, value : binder.#evaluate(item.orderby.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)) }))
                         .sort((a, b) => a.value > b.value ? 1 : -1)
                         .map(x => x.index);
+                }
+
+                // Filter on distinct values if 'distinct' is defined.
+                if (item.distinct !== null) {
+                    var distinctIndexes = Array.from(new Map(indexes.toReversed().map((index) => [binder.#evaluate(item.distinct.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)), index])).values());
+                    indexes = indexes.filter((index) => distinctIndexes.includes(index));
                 }
 
                 // Reduce list of indexes if 'skip' or 'limit' is defined
@@ -1043,7 +1050,7 @@ class JSBinder
                                 break;
 
                             case JSBinder.#Type.SELECT:
-                                binder.#addEvent(obj)("change", (e) => set(obj.value ? toSafeString(obj.value) : null));
+                                binder.#addEvent(obj)("change", (e) => set(toSafeString(obj.value)));
                                 break;
 
                             case JSBinder.#Type.INPUT:

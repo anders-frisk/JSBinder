@@ -181,18 +181,21 @@ Result:
 ```
 
 
-**Where, Skip, Limit & OrderBy**<br />
+**Where, Skip, Limit, OrderBy & Distinct**<br />
 Filter list by adding a `data-where="expression"`.<br />
 Limit to a subrange by `data-skip="expression"` and `data-limit="expression"`.<br />
 Sort by `data-orderby="expression"`. 
+Filter for only distinct values by `data-distinct="expression"`
 
-*Where, skip, limit and orderby can be used independently or in any combination.*
+*Where, skip, limit, orderby and distinct can be used independently or in any combination.*
 
 `data-where="@planet.type == 'Ice'"` will result in a list containing '**Uranus**' and '**Neptune**'.
 
 `data-skip="2" data-limit="3"` will result in a list containing '**Venus**', '**Earth**' and '**Mars**'.
 
 `data-orderby="@planet.diameter"` will result in a sorted list from smallest to largest planet.
+
+`data-distinct="@planet.type` will result in a list of first item of each type.
 
 
 **Events**<br />
@@ -201,6 +204,8 @@ Each triggers the [event](#Events) `jsbinder-each` with `e.detail.action = "add"
 
 ## Attribute
 Set attributes with `data-attr="'attribute' : expression"`.<br /> Add more attributes separated by semicolon `data-attr="'attribute1' : expression1; 'attribute2' : expression2"`.
+
+*Select and input value must be set using `data-bind="expression"`.*
 
 ```javascript
 binder.setState({ details: { img: "earth.jpeg", title: "Earth" }});
@@ -215,7 +220,7 @@ Result:
 <img src='earth.jpeg' title='Earth' />
 ```
 
-Attribute updates can also be made with `{{...}}` syntax:
+Attribute updates can also be made with interpolation syntax `{{...}}`.
 
 ```html
 <img src="{{details.img}}" title="{{details.title}}" />
@@ -350,14 +355,13 @@ document.body.addEventListener("jsbinder-bind", (e) => console.log("Bind event o
 binder.setState({
   planets,
   type_filter : "",
-  type_filters : [...new Set(planets.map((x) => x.type))], //Creates a list of distinct types.
 });
 ```
 
 ```html
 <select data-bind='type_filter' data-onchange="type_filter = @value">
   <option value="">All</option>
-  <option data-each="@x in type_filters" data-key="@x" value="{{@x}}">{{@x}}</option>
+  <option data-each="@x in planets" data-key="@x.type" data-distinct="@x.type" value="{{@x.type}}">{{@x.type}}</option>
 </select>
 <table>
   <tr>
@@ -392,10 +396,10 @@ binder.setState({
     <th>Diameter (km)</th>
     <th>Type</th>
   </tr>
-  <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize">
-    <td>{{@x.name}}</td>
-    <td>{{@x.diameter}}</td>
-    <td>{{@x.type}}</td>
+  <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize - 1 < planets.length ? page * pagesize + pagesize - 1 : planets.length - 1">
+    <td>{{planets[@i].name}}</td>
+    <td>{{planets[@i].diameter}}</td>
+    <td>{{planets[@i].type}}</td>
   </tr>
 </table>
 <button data-for="@page" data-from="1" data-to="#ceil(planets.length / pagesize)" data-onclick="page = @page - 1">{{@page}}</button>
@@ -407,7 +411,7 @@ binder.setState({
 *Example only shows two levels of recursiveness but can handle as many as defined in state.*
 
 ```javascript
-var tree = 
+var treeData = 
 [
   {
     title: "Terrestrial planets",
@@ -428,7 +432,7 @@ var tree =
   },
   ...
 ];
-binder.setState({ tree });
+binder.setState({ treeData });
 ```
 
 ```html
@@ -439,7 +443,7 @@ binder.setState({ tree });
   </li>
 </template>
 
-<ul data-render="tree" data-source="tree"></ul>
+<ul data-render="tree" data-source="treeData"></ul>
 ```
 
 Reslut:

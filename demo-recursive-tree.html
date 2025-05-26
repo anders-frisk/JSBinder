@@ -3,49 +3,55 @@
         <script type="text/javascript" src="binder.js"></script>      
         <script type="text/javascript">
 
-            let binder = new JSBinder();
+            let binder = null;
+            
+            function init()
+            {
+                binder = new JSBinder();
+                binder.scan();
 
-            var tree = 
-            [
-                {
-                    title: "Terrestrial planets",
-                    items:
-                    [
-                        { title: "Mercury", items: [] },
-                        { title: "Venus", items: [] },
-                        { title: "Earth", items: [] },
-                        { title: "Mars", items: [] },
-                    ]
-                },
-                {
-                    title: "Gas planets",
-                    items:
-                    [
-                        { title: "Jupiter", items: [] },
-                        { title: "Saturn", items: [] },
-                    ]
-                },
-                {
-                    title: "Ice planets",
-                    items:
-                    [
-                        { title: "Uranus", items: [] },
-                        { title: "Neptune", items: [] },
-                    ]
-                },
-            ];
-            binder.setState({ tree });
+                var treeData = 
+                [
+                    {
+                        title: "Terrestrial planets",
+                        items:
+                        [
+                            { title: "Mercury", items: [] },
+                            { title: "Venus", items: [] },
+                            { title: "Earth", items: [] },
+                            { title: "Mars", items: [] },
+                        ]
+                    },
+                    {
+                        title: "Gas planets",
+                        items:
+                        [
+                            { title: "Jupiter", items: [] },
+                            { title: "Saturn", items: [] },
+                        ]
+                    },
+                    {
+                        title: "Ice planets",
+                        items:
+                        [
+                            { title: "Uranus", items: [] },
+                            { title: "Neptune", items: [] },
+                        ]
+                    },
+                ];
+                binder.setState({ treeData });
+            }
             
         </script>
     </head>
-    <body onload="binder.scan();">
+    <body onload="init();">
         <template data-template="tree">
         <li data-each="@item in @data" data-key="@item.title">
-            <span data-bind="@item.title"></span>
+            <span>{{@item.title}}</span>
             <ul data-if="@item.items.length > 0" data-render="tree" data-source="@item.items"></ul>
         </li>
         </template>
 
-        <ul data-render="tree" data-source="tree"></ul>
+        <ul data-render="tree" data-source="treeData"></ul>
     </body>
 </html>
