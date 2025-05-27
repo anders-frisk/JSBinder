@@ -184,8 +184,8 @@ Result:
 **Where, Skip, Limit, OrderBy & Distinct**<br />
 Filter list by adding a `data-where="expression"`.<br />
 Limit to a subrange by `data-skip="expression"` and `data-limit="expression"`.<br />
-Sort by `data-orderby="expression"`. 
-Filter for only distinct values by `data-distinct="expression"`
+Sort by `data-orderby="expression"`.<br />
+Filter for only distinct values by `data-distinct="expression"`.
 
 *Where, skip, limit, orderby and distinct can be used independently or in any combination.*
 
