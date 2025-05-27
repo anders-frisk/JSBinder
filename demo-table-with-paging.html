@@ -39,7 +39,7 @@
                 <th>Diameter (km)</th>
                 <th>Type</th>
             </tr>
-            <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize - 1 < planets.length ? page * pagesize + pagesize - 1 : planets.length - 1">
+            <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize - 1" data-where="planets[@i] !== undefined">
                 <td>{{planets[@i].name}}</td>
                 <td>{{planets[@i].diameter}}</td>
                 <td>{{planets[@i].type}}</td>

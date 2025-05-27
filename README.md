@@ -73,7 +73,7 @@ Result:
 Text updates can also be made with interpolation syntax `{{...}}`.
 
 ```html
-<div>{{cart.lenght}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
+<div>{{cart.length}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
 ```
 
 **Events**<br />
@@ -396,7 +396,7 @@ binder.setState({
     <th>Diameter (km)</th>
     <th>Type</th>
   </tr>
-  <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize - 1 < planets.length ? page * pagesize + pagesize - 1 : planets.length - 1">
+  <tr data-for="@i" data-from="page * pagesize" data-to="page * pagesize + pagesize - 1" data-where="planets[@i] !== undefined">
     <td>{{planets[@i].name}}</td>
     <td>{{planets[@i].diameter}}</td>
     <td>{{planets[@i].type}}</td>

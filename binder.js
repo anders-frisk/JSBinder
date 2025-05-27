@@ -54,6 +54,10 @@ class JSBinder
     static #using = (...x) => (f) => f(...x);
 
 
+    static #isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
+    static #alphaNumericSort = (a, b) => { const aIsNum = JSBinder.#isNumeric(a); const bIsNum = JSBinder.#isNumeric(b); if (aIsNum && !bIsNum) return 1; if (!aIsNum && bIsNum) return -1; if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b); return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' }); };
+
+
     // State handling
 
     #indexMap = new Map();
@@ -479,7 +483,7 @@ class JSBinder
                 if (item.orderby !== null) {
                     indexes = indexes
                         .map(index => ({ index, value : binder.#evaluate(item.orderby.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)) }))
-                        .sort((a, b) => a.value > b.value ? 1 : -1)
+                        .sort((a, b) => JSBinder.#alphaNumericSort(a.value, b.value))
                         .map(x => x.index);
                 }
 
@@ -672,7 +676,7 @@ class JSBinder
 
     // <div>{{details.title}}</div>
     // <a href="{{link.url}}">{{link.title}}</a>
-    // <div>{{cart.lenght}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
+    // <div>{{cart.length}} {{cart.length === 1 ? "item" : "items"}} in cart.</div>
     //
     // event: jsbinder-attr with e.detail.key = attribute key and e.detail.value = value.
     //        jsbinder-bind with e.detail.value = value. (e.target = parentNode)
@@ -707,7 +711,7 @@ class JSBinder
                             text: prepareString(element.textContent.trim()),
                             modified: new JSBinder.#ModifiedMemo(),
                         });
-                        element.textContent = ""; //Clear...
+                        element.textContent = "";
                         counter++;
                     }
                 }
@@ -726,7 +730,7 @@ class JSBinder
                                 text: prepareString(attributes[i].value),
                                 modified: new JSBinder.#ModifiedMemo(),
                             });
-                            element.setAttribute(attributes[i].name, ""); //Clear...
+                            element.setAttribute(attributes[i].name, "");
                             counter++;
                         }
                     }
@@ -743,19 +747,21 @@ class JSBinder
         update = () => {
             this.#items.forEach((item) => {
                 const result = item.expressions.reduce((text, expression, index) => text.replace("{"+index+"}", binder.#evaluate(expression)), item.text) ?? "";
-                if (item.modified.check(result)) {
-                    switch (item.type)
-                    {
-                        case "text":
+                switch (item.type)
+                {
+                    case "text":
+                        if (item.modified.check(result)) {
                             item.obj.textContent = result;
                             binder.#dispatchEvent(item.obj.parentNode, "bind", { value: result });
-                            break;
+                        }
+                        break;
 
-                        case "attribute":
+                    case "attribute":
+                        if (item.modified.check(result)) {
                             item.obj.setAttribute(item.key, result);
                             binder.#dispatchEvent(item.obj, "attr", { key: item.key, value: result });
-                            break;
-                    }
+                        }
+                        break;
                 }
             });
         };
@@ -795,7 +801,6 @@ class JSBinder
         update = () => {
             this.#items.sort((a, b) => b.depth - a.depth).forEach((item) => {
                 const result = item.expressionTree.evaluate();
-
                 switch (JSBinder.#typeOf(item.obj))
                 {
                     case JSBinder.#Type.CHECKBOX:
@@ -835,7 +840,7 @@ class JSBinder
 
                     default:
                         if (item.modified.check(result)) {
-                            item.obj.innerHTML = JSBinder.#isEmpty(result) ? "" : result; //String(value) ???
+                            item.obj.innerHTML = JSBinder.#isEmpty(result) ? "" : String(result);
                             binder.#dispatchEvent(item.obj, "bind", { value: result });
                         }
                         break;
@@ -1062,7 +1067,12 @@ class JSBinder
         };
     })(this);
 
-    // { tree: [{ title: "Aaaa", items: [{ title: "Bbbb", items: [...] }, { title: "Cccc", items: [...] }] }] }
+    // { treeData: [
+    //   { title: "Aaaa", items: [
+    //     { title: "Bbbb", items: [...] }, 
+    //     { title: "Cccc", items: [...] }
+    //   ]}
+    // ]}
     //
     // <template data-template="tree">
     //   <li data-each="@item in @data">
@@ -1070,7 +1080,7 @@ class JSBinder
     //     <ul data-render="tree" data-source="@item.items"></ul>
     //   </li>
     // </template>
-    // <ul data-render="tree" data-source="tree"></ul>
+    // <ul data-render="tree" data-source="treeData"></ul>
     //
     // event: jsbinder-render.
     #templates = ((binder) => new class {
