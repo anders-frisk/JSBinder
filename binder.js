@@ -8,6 +8,9 @@ class JSBinder
 
         this.#settings = { root: document.body, prefix: "", highFrequencyInterval: 100, lowFrequencyInterval: 5000, interpolation: ["{{", "}}"], ...options };
         
+        if (!this.#settings.root)
+            return JSBinder.#error('JSBinder can not find the root element');
+
         if (this.#settings.root.attributes.hasOwnProperty("data-jsbinder"))
             return JSBinder.#error('an instance of JSBinder already exists on this root');
 
@@ -51,11 +54,17 @@ class JSBinder
     // Left-to-right function composition. JSBinder.#pipe(f1, f2, f3)(x) >> f3(f2(f1(x)));
     static #pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
 
-    static #using = (...x) => (f) => f(...x);
-
-
-    static #isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
-    static #alphaNumericSort = (a, b) => { const aIsNum = JSBinder.#isNumeric(a); const bIsNum = JSBinder.#isNumeric(b); if (aIsNum && !bIsNum) return 1; if (!aIsNum && bIsNum) return -1; if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b); return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' }); };
+    static #alphaNumericSort = (() => {
+        const isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
+        return (a, b) => {
+            const aIsNum = isNumeric(a);
+            const bIsNum = isNumeric(b);
+            if (aIsNum && !bIsNum) return 1;
+            if (!aIsNum && bIsNum) return -1;
+            if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b);
+            return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' });
+        };
+    })();
 
 
     // State handling
@@ -321,7 +330,7 @@ class JSBinder
     static #RGX_ATTR = "[a-zA-Z]{1}[0-9a-zA-Z_-]*";
     static #RGX_INT = "[0-9]+";
     static #RGX_INDEX_KEY = "{[a-zA-Z0-9_]+\\}";
-    static #RGX_EXP = ".+";
+    static #RGX_EXP = ".+?";
     static #RGX_PATH = JSBinder.#RGX_VAR + "(?:" + "(?:" + [`\\[${JSBinder.#RGX_INT}\\]`, `\\[@${JSBinder.#RGX_VAR}\\]`, `\\[${JSBinder.#RGX_INDEX_KEY}\\]`, "\\."].join("|") + ")" + `(?:${JSBinder.#RGX_VAR})?` + ")*";
 
     static #rgxFormatVariable = (key) => new RegExp("@" + key + "\\b", "g");
@@ -489,7 +498,7 @@ class JSBinder
 
                 // Filter on distinct values if 'distinct' is defined.
                 if (item.distinct !== null) {
-                    var distinctIndexes = Array.from(new Map(indexes.toReversed().map((index) => [binder.#evaluate(item.distinct.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)), index])).values());
+                    const distinctIndexes = Array.from(new Map(indexes.toReversed().map((index) => [binder.#evaluate(item.distinct.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)), index])).values());
                     indexes = indexes.filter((index) => distinctIndexes.includes(index));
                 }
 
@@ -691,10 +700,10 @@ class JSBinder
 
             const [rgx_l, rgx_r] = binder.#settings.interpolation.map(JSBinder.#escapeRgx);
 
-            const rgx_interpolation = new RegExp(rgx_l + "(.+?)" + rgx_r, "g");
+            const rgx_interpolation = new RegExp(rgx_l + "(" + JSBinder.#RGX_EXP + ")" + rgx_r, "g");
 
             // "aa {{bb}} cc {{dd}} ee" >> "aa {0} cc {1} ee"
-            const prepareString = (input) => JSBinder.#using(0)((index) => input.replace(rgx_interpolation, () => `{${index++}}`));
+            const prepareString = (input) => input.replace(rgx_interpolation, (() => { let index = 0; return () => `{${index++}}`; })());
 
             // "{{aa}}" >> "aa"
             const trimExpression = (x) => x.replace(new RegExp("^" + rgx_l), "").replace(new RegExp(rgx_r + "$"), "").trim();
