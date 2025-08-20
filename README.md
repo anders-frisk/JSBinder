@@ -350,7 +350,7 @@ document.body.addEventListener("jsbinder-bind", (e) => console.log("Bind event o
 # Examples
 
 ## Table with filter
-[demo](demo-table-with-filter.html)
+[https://anders-frisk.github.io/jsbinder/demo-table-with-filter.html](https://anders-frisk.github.io/jsbinder/demo-table-with-filter.html)
 ```javascript
 binder.setState({
   planets,
@@ -379,7 +379,7 @@ binder.setState({
 
 
 ## Table with paging
-[demo](demo-table-with-paging.html)
+[https://anders-frisk.github.io/jsbinder/demo-table-with-paging.html](https://anders-frisk.github.io/jsbinder/demo-table-with-paging.html)
 ```javascript
 binder.addFunction("ceil", (x) => Math.ceil(x));
 binder.setState({
@@ -407,7 +407,7 @@ binder.setState({
 
 
 ## Recursive Tree
-[demo](demo-recursive-tree.html)<br />
+[https://anders-frisk.github.io/jsbinder/demo-recursive-tree.html](https://anders-frisk.github.io/jsbinder/demo-recursive-tree.html)<br />
 *Example only shows two levels of recursiveness but can handle as many as defined in state.*
 
 ```javascript
