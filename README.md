@@ -280,10 +280,6 @@ Result:
 Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = property` and `e.detail.value = value`.
 
 
-## Value
-ToDo....
-
-
 # Reversed Directives
 The following directives are used to update state in response to user interactions.<br />
 For more advanced updates, plain JavaScript events and `binder.setState(...)` is recomended.
@@ -361,7 +357,7 @@ binder.setState({
 ```html
 <select data-bind='type_filter' data-onchange="type_filter = @value">
   <option value="">All</option>
-  <option data-each="@x in planets" data-key="@x.type" data-distinct="@x.type" value="{{@x.type}}">{{@x.type}}</option>
+  <option data-each="@x in planets" data-key="@x.type" data-orderby="@x.type" data-distinct="@x.type" value="{{@x.type}}">{{@x.type}}</option>
 </select>
 <table>
   <tr>
