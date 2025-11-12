@@ -55,6 +55,8 @@ class JSBinder
     // Left-to-right function composition. JSBinder.#pipe(f1, f2, f3)(x) >> f3(f2(f1(x)));
     static #pipe = (...fns) => (x) => fns.reduce((v, f) => f(v), x);
 
+    static #using = (...x) => (f) => f(...x);
+
     static #alphaNumericSort = (() => {
         const isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
         return (a, b) => {
@@ -173,6 +175,7 @@ class JSBinder
                 exp = exp.replace(text, `{{${index}}}`);
             });
 
+            // "5+3-x" >> "5 + 3 - x" >> ["5", "+", "3", "-", "x"]
             let parts = exp.replace(this.#rgxAnyOperator, " $1 ").trim().split(new RegExp("\\s+"));
 
             //"{{index}}" >> "..." & '...' Restore strings in expression.
@@ -299,7 +302,7 @@ class JSBinder
                 ]);
 
             // Recursive parse tree nodes to values.
-            // ["'string'", vaiable_eq_1, "true", ...] >> ["string", 1, true, ...]   
+            // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
             const resolveLiterals = (input) => input
                 .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
                 .map((x) => !Array.isArray(x) && !JSBinder.#ExpressionTree.#isFunction(x) && !JSBinder.#ExpressionTree.#isOperator(x) ? this.#binder.#get(x) : x);
@@ -367,8 +370,8 @@ class JSBinder
     static #ModifiedMemo = class { #current = null; #first = true; check = (value) => { if (this.#first === true || value !== this.#current) { this.#current = value; this.#first = false; return true; } return false; } };
 
     // data-if="data.visible == true"
-    // data.visible = true  >> <div data-if="data.visible == true">a</div> >> <div>a</div>
-    // data.visible = false >> <div data-if="data.visible == true">a</div> >> <!-- if -->
+    // data.visible = true  >> <div data-if="data.visible == true">...</div> >> <div>...</div>
+    // data.visible = false >> <div data-if="data.visible == true">...</div> >> <!-- if -->
     //
     // event: jsbinder-if with e.detail.action = "add" / "remove".
     #ifDirective = ((binder) => new class {
@@ -478,16 +481,11 @@ class JSBinder
                 const skip = item.skipTree !== null ? item.skipTree.evaluate() : null;
                 const limit = item.limitTree !== null ? item.limitTree.evaluate() : null;
 
-                let indexes = [];
-                
-                // Create list of all idexes to include, filtered by 'where' if defined.
-                const source = binder.#get(item.list);
-                if (Array.isArray(source)) {
-                    source.forEach((x, index) => {
-                        const valid = item.where === null || binder.#evaluate(item.where.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`));
-                        if (valid) indexes.push(index);
-                    });
-                }
+                // Create list of all indexes to include, filtered by 'where' if defined.
+                let indexes = JSBinder.#using(binder.#get(item.list))
+                    ((source) => Array.isArray(source)
+                        ? [...function* () { for (var i = 0; i < source.length; i++) { if (item.where === null || binder.#evaluate(item.where.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${i}]`))) yield(i); }; }()]
+                        : []);
 
                 // Sort list of indexes if 'orderby' is defined.
                 if (item.orderby !== null) {
@@ -507,18 +505,13 @@ class JSBinder
                 if (skip !== null) indexes = indexes.slice(skip);
                 if (limit !== null) indexes = indexes.slice(0, limit);
 
-                let newKeys = [];
-
                 // Calculate keys for each index.
-                indexes.forEach((index) => {
-                    const key = binder.#evaluate(item.key.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`))
-                        .toString()
-                        .replace(new RegExp("[^a-zA-Z0-9]", "g"), "_");
-
-                    binder.#indexMap.set(`${item.itemIndex}_${key}`, index);
-
-                    newKeys.push(`${item.itemIndex}_${key}`);
-                });
+                const newKeys = indexes.map((index) => 
+                    JSBinder.#using(binder.#evaluate(item.key.replace(JSBinder.#rgxFormatVariable(item.alias), `${item.list}[${index}]`)).toString().replace(new RegExp("[^a-zA-Z0-9]", "g"), "_"))
+                        ((key) => {
+                            binder.#indexMap.set(`${item.itemIndex}_${key}`, index);
+                            return `${item.itemIndex}_${key}`;
+                        }));
 
                 // Compare keys to know what to add or remove.
                 const keysToRemove = item.keys.filter(whereNotIn(newKeys));
@@ -628,13 +621,8 @@ class JSBinder
                 const from = item.fromTree.evaluate();
                 const to = item.toTree.evaluate();
 
-                let newKeys = [];
-                
                 // Create list of all keys/numbers to include, filtered by 'where' if defined.
-                for (let key = from; key <= to; key++) {
-                    const valid = item.where === null || binder.#evaluate(item.where.replace(JSBinder.#rgxFormatVariable(item.alias), key));
-                    if (valid) newKeys.push(key);
-                }
+                const newKeys = [...function* () { for (let key = from; key <= to; key++) { if (item.where === null || binder.#evaluate(item.where.replace(JSBinder.#rgxFormatVariable(item.alias), key))) yield(key); } }()];
 
                 // Compare keys to know what to add or remove.
                 const keysToRemove = item.keys.filter(whereNotIn(newKeys));
@@ -1077,7 +1065,7 @@ class JSBinder
                                 break;
 
                             default:
-                                return JSBinder.#error(`'onchange' directive is only supported for <select> and <input>`);
+                                return JSBinder.#error(`'onchange' directive is currently only supported for <select> and <input>`);
                         }
                     });
                 });

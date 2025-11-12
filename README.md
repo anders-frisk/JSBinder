@@ -281,8 +281,8 @@ Style triggers the [event](#Events) `jsbinder-style` with `e.detail.key = proper
 
 
 # Reversed Directives
-The following directives are used to update state in response to user interactions.<br />
-For more advanced updates, plain JavaScript events and `binder.setState(...)` is recomended.
+The following directives are used to update state in response to user interactions in the most simple way.<br />
+For any more advanced updates, plain JavaScript events and `binder.setState(...)` is recomended.
 
 ## OnClick
 Adds functionallity to update state with new data from an onclick event.<br />
