@@ -28,8 +28,6 @@ const binder = new JSBinder(options);
 
 Supported parameters are:
 - **root**: DOM pointer to the element `binder.scan()` starts from. Default `document.body`.
-- **prefix**: Add a prefix to avoid conflicts with other libraries. `prefix: 'xyz'` will change the attributes to `<div data-xyz-bind='...'></div>` etc.
-- **interpolation**: Set custom start and end tags to avoid conflicts with other libraries. Default `["{{", "}}"]`.
 
 
 ## State
@@ -205,7 +203,7 @@ Each triggers the [event](#Events) `jsbinder-each` with `e.detail.action = "add"
 ## Attribute
 Set attributes with `data-attr="'attribute' : expression"`.<br /> Add more attributes separated by semicolon `data-attr="'attribute1' : expression1; 'attribute2' : expression2"`.
 
-*Select and input value must be set using `data-bind="expression"`.*
+*Important: Select and input value must be set using `data-bind="expression"`.*
 
 ```javascript
 binder.setState({ details: { img: "earth.jpeg", title: "Earth" }});
