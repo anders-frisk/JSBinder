@@ -117,9 +117,10 @@ class JSBinder
             .filter(x => !x.match(/^\{([a-zA-Z0-9_]+)\}$/)) // Skip full {index_key}
             .filter(x => !x.match(/^\d+$/)); // Skip full integers
 
-    static #isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
-    static #alphaNumericSort = (a, b) => JSBinder.#apply(JSBinder.#isNumeric(a), JSBinder.#isNumeric(b))((aIsNum, bIsNum) => { if (aIsNum && !bIsNum) return 1; if (!aIsNum && bIsNum) return -1; if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b); return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' }); });
-
+    static #alphaNumericSorter = new class {
+        #isNumeric = (val) => typeof val === 'number' || (!isNaN(val) && !isNaN(parseFloat(val)));
+        sort = (a, b) => JSBinder.#apply(this.#isNumeric(a), this.#isNumeric(b))((aIsNum, bIsNum) => { if (aIsNum && !bIsNum) return 1; if (!aIsNum && bIsNum) return -1; if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b); return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' }); });
+    };
 
     #indexMap = new Map();
     #state = {};
@@ -200,22 +201,6 @@ class JSBinder
      * // Use in HTML
      * // <span>{{#round(value)}}</span>
      * // If value = 5.7, displays: <span>6</span>
-     * 
-     * @example
-     * // Register a formatting function
-     * binder.addFunction('currency', (amount) => `$${amount.toFixed(2)}`);
-     * // <p>{{#currency(price)}}</p>
-     * // If price = 19.5, displays: <p>$19.50</p>
-     * 
-     * @example
-     * // Register with arrow function
-     * binder.addFunction('abs', (x) => Math.abs(x));
-     * 
-     * @example
-     * // Register with regular function
-     * binder.addFunction('uppercase', function(text) { 
-     *   return String(text).toUpperCase(); 
-     * });
      */
     addFunction = (name, method) => {
         if (!name.match(/^[a-zA-Z]{1}[0-9a-zA-Z_]*$/))
@@ -277,71 +262,83 @@ class JSBinder
         }
     };
 
-    static #ExpressionTree = class {
-        #binder;
-        #tree;
-
-        constructor (binder, exp)
-        {
-            this.#binder = binder;
-            this.#tree = JSBinder.#ExpressionTree.#buildTree(exp);
-        };
-
+     // Expression solver - Parses and evaluates JavaScript-like expressions in bindings.
+     // Handles operators, functions, ternary expressions, and respects operator precedence.
+    static #Solver = class {
         static #OPERATORS = new Set(["?", ":", "(", ")", "!!", "!", "~", "<<", ">>", ">>>", "**", "*", "/", "%", "+", "-", ">=", ">", "<=", "<", "===", "==", "!==", "!=", "&", "^", "|", "&&", "||", "??"]);
 
         static #isFunction = (x) => typeof x === "string" && !!x.match(/^#[a-zA-Z]{1}[0-9a-zA-Z_]*$/);
-        static #isOperator = (x) => typeof x === "string" && this.#OPERATORS.has(x);
+        static #isOperator = (x) => typeof x === "string" && JSBinder.#Solver.#OPERATORS.has(x);
 
-        // Recusive parse and build an expression tree / Abstract Syntax Tree (AST) from an string expression in order of operator precedence.
-        static #buildTree = (exp) => {
-            const stringMap = new Map();
-            const expressionMap = new Map();
+        // Tokenizer - Handles string parsing and token extraction.
+        static #Tokenizer = class {
+            #stringMap = new Map();
+            #expressionMap = new Map();
 
-            // Replaces strings and store temporary.
+            // Extract strings and temporary replace with placeholder.
             // "..." & '...' >> "{{str#index#}}"
-            [...String(exp).matchAll(/'[^']*'|"[^"]*"/g)].forEach(([text], index) => {
-                stringMap.set(index, text);
-                exp = exp.replace(text, `{{str${index}}}`);
-            });
+            extractStrings = (exp) => {
+                [...String(exp).matchAll(/'[^']*'|"[^"]*"/g)].forEach(([text], index) => {
+                    this.#stringMap.set(index, text);
+                    exp = exp.replace(text, `{{str${index}}}`);
+                });
+                return exp;
+            };
 
-            // Replaces "inner expressions" and store temporary.
+            // Extract inner expressions and temporary replace with placeholder.
             // "[...]" >> "[{{exp#index#}}]"
-            JSBinder.#getInnerExpressions(exp).forEach((match, index) => {
-                expressionMap.set(index, match);
-                exp = exp.replace(`[${match}]`, `[{{exp${index}}}]`);
-            });
+            extractExpressions = (exp) => {
+                JSBinder.#getInnerExpressions(exp).forEach((match, index) => {
+                    this.#expressionMap.set(index, match);
+                    exp = exp.replace(`[${match}]`, `[{{exp${index}}}]`);
+                });
+                return exp;
+            };
 
-            // Split expression
-            // "5+3-x" >> "5 + 3 - x" >> ["5", "+", "3", "-", "x"]
-            let parts = exp.replace(/(>>>|===|!==|!!|<<|>>|\*\*|>=|<=|==|!=|&&|\|\||\?\?|\?|:|\(|\)|!|~|\*|\/|%|\+|-|>|<|&|\^|\|)/g, " $1 ").trim().split(/\s+/);
-
-            // Restore "inner expressions".
+            // Restore inner expressions.
             // "[{{exp#index#}}]" >> "[...]"
-            parts = parts.map((x) => x.replace(/\{\{exp(\d+)\}\}/g, (_, index) => expressionMap.get(parseInt(index))));
+            restoreExpressions = (parts) => {
+                parts = parts.map((x) => x.replace(/\{\{exp(\d+)\}\}/g, (_, index) => this.#expressionMap.get(parseInt(index))));
+                return parts;
+            };
 
             // Restore strings.
             // "{{str#index#}}" >> "..." & '...'
-            parts = parts.map((x) => {
-                const m = x.match(/^\{\{str(\d+)\}\}$/);
-                if (m) return stringMap.get(parseInt(m[1])); // lägg till " ?? 'undefined_temp_value'" etc..?
-                return x;
-            });
+            restoreStrings = (parts) => {
+                parts = parts.map((x) => {
+                    const m = x.match(/^\{\{str(\d+)\}\}$/);
+                    if (m) return this.#stringMap.get(parseInt(m[1])); // lägg till " ?? 'undefined_temp_value'" etc..?
+                    return x;
+                });
+                return parts;
+            };
+        };
 
-            let pos = 0;
+        // TreeBuilder - Constructs the AST from tokens.
+        static #TreeBuilder = class {
+            #parts;
+            #pos = 0;
 
-            const recurse = () => {
+            constructor(parts)
+            {
+                this.#parts = parts;
+            }
+
+            build = () => this.#parseExpression();
+
+            #parseExpression = () => {
                 let output = [];
 
                 // ["(", "1", "+", "1", ")", "/", "2"] >> [["1", "+", "1"], "/", "2"]
-                while (pos < parts.length) {
-                    if (parts[pos] === "(") { pos++; output.push(JSBinder.#unwrapSingleArray(recurse())); }
-                    else if (parts[pos] === ")") { pos++; break; }
-                    else { output.push(parts[pos]); pos++ }
+                while (this.#pos < this.#parts.length) {
+                    if (this.#parts[this.#pos] === "(") { this.#pos++; output.push(JSBinder.#unwrapSingleArray(this.#parseExpression())); }
+                    else if (this.#parts[this.#pos] === ")") { this.#pos++; break; }
+                    else { output.push(this.#parts[this.#pos]); this.#pos++ }
                 }
 
                 // (right to left) (..., operator) "-", "5", ... >> (..., operator) ["-", "5"], ...
                 for (let x = output.length - 2; x >= 0; x--)
-                    if (["-", "+"].includes(output[x]) && (x === 0 || JSBinder.#ExpressionTree.#isOperator(output[x-1])))
+                    if (["-", "+"].includes(output[x]) && (x === 0 || JSBinder.#Solver.#isOperator(output[x-1])))
                         output.splice(x, 2, [output[x], output[x+1]]);
 
                 // (right to left) ..., prefix_operator, operand, ... >> ..., [prefix_operator, operand], ...
@@ -373,90 +370,133 @@ class JSBinder
                 // [[...]] >> [...]
                 return output.length === 1 && Array.isArray(output[0]) ? output[0] : output;
             };
-
-            return recurse();
         };
 
-        // Evaluates prefix (unary) expressions. Ex: '!true' (operator operand)
-        // map: [['!', (a) => !a], ...] data: ['!', true] >> [false]
-        static #evaluatePrefixOperations = (data, map) => {
-            map.forEach(([op, func]) => { if (data.length === 2 && data[0] === op) { data = [func(data[1])]; } });
-            return data;
-        };
+        // TreeEvaluator - Evaluates the constructed AST.
+        static #Evaluator = class {
+            #binder;
 
-        // Evaluates infix (binary) expressions. Ex: '1+2' (operand operator operand)
-        // map: [['+', (a, b) => a+b], ...] data: [1, '+', 2] >> [3]
-        static #evaluateInfixOperations = (data, map) => {
-            map.forEach(([op, func]) => { if (data.length === 3 && data[1] === op) { data = [func(data[0], data[2])]; } });
-            return data;
-        };
+            constructor(binder)
+            {
+                this.#binder = binder;
+            }
 
-        // Recursive evaluation of expression tree.
-        evaluate = () => {
-            // [[1, "==", 2], "?", "'yes'", ":", "'no'" ] >> ["'no'"]
-            const handleTernary = (data) => {
-                const list = (x) => Array.isArray(x) ? x : [x];
+            evaluate = (tree) => this.#evaluate(tree);
 
-                if (data.length === 5 && data[1] === "?" && data[3] === ":") data = evaluateTree(list(data[0])) ? list(data[2]) : list(data[4]);
+            // Evaluates prefix (unary) expressions. Ex: '!true' (operator operand)
+            // map: [['!', (a) => !a], ...] data: ['!', true] >> [false]
+            static #evaluatePrefixOperations = (data, map) => {
+                map.forEach(([op, func]) => { if (data.length === 2 && data[0] === op) { data = [func(data[1])]; } });
                 return data;
             };
 
-            // [#round, 5.5] >> [6]
-            const handleFunctions = (data) =>
-                JSBinder.#ExpressionTree.#evaluatePrefixOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
+            // Evaluates infix (binary) expressions. Ex: '1+2' (operand operator operand)
+            // map: [['+', (a, b) => a+b], ...] data: [1, '+', 2] >> [3]
+            static #evaluateInfixOperations = (data, map) => {
+                map.forEach(([op, func]) => { if (data.length === 3 && data[1] === op) { data = [func(data[0], data[2])]; } });
+                return data;
+            };
 
-            // ["!", true] >> [false]
-            const handlePrefixOperations = (data) => 
-                JSBinder.#ExpressionTree.#evaluatePrefixOperations(data, [
-                    ["!!", (x) => !!x],
-                    ["!",  (x) =>  !x],
-                    ["~",  (x) =>  ~x],
-                    ["-",  (x) => 0-x],
-                    ["+",  (x) => 0+x],
-                ]);
+            #evaluate = (tree) => {
+                // [[1, "==", 2], "?", "'yes'", ":", "'no'" ] >> ["'no'"]
+                const handleTernary = (data) => {
+                    const list = (x) => Array.isArray(x) ? x : [x];
 
-            // [1, "+", 2] >> [3]
-            const handleInfixOperations = (data) =>
-                JSBinder.#ExpressionTree.#evaluateInfixOperations(data, [
-                    ["**",  (x, y) => x **  y], 
-                    ["*",   (x, y) => x *   y], 
-                    ["/",   (x, y) => x /   y], 
-                    ["%",   (x, y) => x %   y], 
-                    ["+",   (x, y) => x +   y], 
-                    ["-",   (x, y) => x -   y], 
-                    ["<<",  (x, y) => x <<  y],
-                    [">>",  (x, y) => x >>  y],
-                    [">>>", (x, y) => x >>> y],
-                    ["===", (x, y) => x === y],
-                    ["==",  (x, y) => x ==  y],
-                    ["!==", (x, y) => x !== y],
-                    ["!=",  (x, y) => x !=  y],
-                    [">=",  (x, y) => x >=  y],
-                    [">",   (x, y) => x >   y],
-                    ["<=",  (x, y) => x <=  y],
-                    ["<",   (x, y) => x <   y],
-                    ["&",   (x, y) => x &   y],
-                    ["^",   (x, y) => x ^   y],
-                    ["|",   (x, y) => x |   y],
-                    ["&&",  (x, y) => x &&  y],
-                    ["||",  (x, y) => x ||  y],
-                    ["??",  (x, y) => x ??  y],
-                ]);
+                    if (data.length === 5 && data[1] === "?" && data[3] === ":") data = evaluateTree(list(data[0])) ? list(data[2]) : list(data[4]);
+                    return data;
+                };
 
-            // Recursive parse tree nodes to values.
-            // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
-            const resolveLiterals = (input) => input
-                .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
-                .map((x) => !Array.isArray(x) && !JSBinder.#ExpressionTree.#isFunction(x) && !JSBinder.#ExpressionTree.#isOperator(x) ? this.#binder.#resolveValue(x) : x);
+                // [#round, 5.5] >> [6]
+                const handleFunctions = (data) =>
+                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
 
-            // Recursive solve tree.
-            const evaluateTree = (input) => JSBinder.#pipe(handleTernary, handleFunctions, handlePrefixOperations, handleInfixOperations, JSBinder.#unwrapSingleArray)(input.map((x) => Array.isArray(x) ? evaluateTree(x) : x));
+                // ["!", true] >> [false]
+                const handlePrefixOperations = (data) => 
+                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, [
+                        ["!!", (x) => !!x],
+                        ["!",  (x) =>  !x],
+                        ["~",  (x) =>  ~x],
+                        ["-",  (x) => 0-x],
+                        ["+",  (x) => 0+x],
+                    ]);
 
-            return JSBinder.#pipe(resolveLiterals, evaluateTree)(this.#tree);
+                // [1, "+", 2] >> [3]
+                const handleInfixOperations = (data) =>
+                    JSBinder.#Solver.#Evaluator.#evaluateInfixOperations(data, [
+                        ["**",  (x, y) => x **  y], 
+                        ["*",   (x, y) => x *   y], 
+                        ["/",   (x, y) => x /   y], 
+                        ["%",   (x, y) => x %   y], 
+                        ["+",   (x, y) => x +   y], 
+                        ["-",   (x, y) => x -   y], 
+                        ["<<",  (x, y) => x <<  y],
+                        [">>",  (x, y) => x >>  y],
+                        [">>>", (x, y) => x >>> y],
+                        ["===", (x, y) => x === y],
+                        ["==",  (x, y) => x ==  y],
+                        ["!==", (x, y) => x !== y],
+                        ["!=",  (x, y) => x !=  y],
+                        [">=",  (x, y) => x >=  y],
+                        [">",   (x, y) => x >   y],
+                        ["<=",  (x, y) => x <=  y],
+                        ["<",   (x, y) => x <   y],
+                        ["&",   (x, y) => x &   y],
+                        ["^",   (x, y) => x ^   y],
+                        ["|",   (x, y) => x |   y],
+                        ["&&",  (x, y) => x &&  y],
+                        ["||",  (x, y) => x ||  y],
+                        ["??",  (x, y) => x ??  y],
+                    ]);
+
+                // Recursive parse tree nodes to values.
+                // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
+                const resolveLiterals = (input) => input
+                    .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
+                    .map((x) => !Array.isArray(x) && !JSBinder.#Solver.#isFunction(x) && !JSBinder.#Solver.#isOperator(x) ? this.#binder.#resolveValue(x) : x);
+
+                // Recursive solve tree.
+                const evaluateTree = (input) => JSBinder.#pipe(handleTernary, handleFunctions, handlePrefixOperations, handleInfixOperations, JSBinder.#unwrapSingleArray)(input.map((x) => Array.isArray(x) ? evaluateTree(x) : x));
+
+                return JSBinder.#pipe(resolveLiterals, evaluateTree)(tree);
+            };
+        };
+
+        // Main ExpressionTree class - Coordinates the parsing and evaluation.
+        static ExpressionTree = class {
+            #tree;
+            #evaluator;
+
+            constructor (binder, exp)
+            {
+                this.#tree = this.#buildTree(exp);
+                this.#evaluator = new JSBinder.#Solver.#Evaluator(binder);
+            };
+
+            #buildTree = (exp) => {
+                const tokenizer = new JSBinder.#Solver.#Tokenizer();
+
+                exp = tokenizer.extractStrings(exp);
+                exp = tokenizer.extractExpressions(exp);
+
+                // Split expression
+                // "5+3-x" >> "5 + 3 - x" >> ["5", "+", "3", "-", "x"]
+                let parts = exp
+                    .replace(/(>>>|===|!==|!!|<<|>>|\*\*|>=|<=|==|!=|&&|\|\||\?\?|\?|:|\(|\)|!|~|\*|\/|%|\+|-|>|<|&|\^|\|)/g, " $1 ")
+                    .trim()
+                    .split(/\s+/);
+
+                parts = tokenizer.restoreExpressions(parts);
+                parts = tokenizer.restoreStrings(parts);
+
+                return new JSBinder.#Solver.#TreeBuilder(parts).build();
+            };
+
+            // Recursive evaluation of expression tree.
+            evaluate = () => this.#evaluator.evaluate(this.#tree);
         };
     };
 
-    #evaluate = (expression) => (new JSBinder.#ExpressionTree(this, expression)).evaluate();
+    #evaluate = (expression) => (new JSBinder.#Solver.ExpressionTree(this, expression)).evaluate();
 
 
     static #TYPE = { CHECKBOX: "checkbox", INPUT: "input", SELECT: "select", IMG: "img", IFRAME: "iframe", TEXTAREA: "textarea" };
@@ -508,6 +548,7 @@ class JSBinder
         #bindings = [];
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
 
+        // Finds and stores data-if elements, replacing them with comment placeholders.
         register = () => {
             this.#pruneDetached();
 
@@ -520,12 +561,13 @@ class JSBinder
                     this.#bindings.push({
                         obj: placeholder, 
                         html, 
-                        expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
+                        expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression), 
                         modified: new JSBinder.#ChangeDetector(),
                     });
                 });
         };
 
+        // Toggles visibility by swapping between stored HTML and comment placeholders based on expression results.
         refresh = () => {
             let counter = 0;
 
@@ -564,6 +606,7 @@ class JSBinder
 
         #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
 
+        // Scans for data-each elements, extracts configuration, and stores template HTML with comment markers.
         register = () => {
             this.#pruneDetached();
 
@@ -595,12 +638,13 @@ class JSBinder
                         where,
                         orderby,
                         distinct,
-                        limitTree: limit !== null ? new JSBinder.#ExpressionTree(binder, limit) : null,
-                        skipTree: skip !== null ? new JSBinder.#ExpressionTree(binder, skip) : null,
+                        limitTree: limit !== null ? new JSBinder.#Solver.ExpressionTree(binder, limit) : null,
+                        skipTree: skip !== null ? new JSBinder.#Solver.ExpressionTree(binder, skip) : null,
                     });
                 });
         };
 
+        // Evaluates list expressions, filters/sorts items, and updates DOM by adding/removing/reordering elements.
         refresh = () => {
             let counter = 0;
 
@@ -623,7 +667,7 @@ class JSBinder
                 if (binding.orderby !== null) {
                     indexes = indexes
                         .map(index => ({ index, value : binder.#evaluate(binding.orderby.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)) }))
-                        .sort((a, b) => JSBinder.#alphaNumericSort(a.value, b.value))
+                        .sort((a, b) => JSBinder.#alphaNumericSorter.sort(a.value, b.value))
                         .map(x => x.index);
                 }
 
@@ -633,7 +677,7 @@ class JSBinder
                     indexes = indexes.filter((index) => distinctIndexes.includes(index));
                 }
 
-                // Reduce list of indexes if 'skip' or 'limit' is defined
+                // Reduce list of indexes if 'skip' or 'limit' is defined.
                 if (skip !== null) indexes = indexes.slice(skip);
                 if (limit !== null) indexes = indexes.slice(0, limit);
 
@@ -649,7 +693,7 @@ class JSBinder
                 const keysToRemove = binding.keys.filter(whereNotIn(newKeys));
                 const keysToAdd = newKeys.filter(whereNotIn(binding.keys));
 
-                // Remove existing items
+                // Remove existing items.
                 binding.keys.forEach((key, i) => {
                     if (keysToRemove.includes(key)) {
                         JSBinder.#dispatchEvent(binding.objs[i], "each", { action: "remove" });
@@ -659,24 +703,24 @@ class JSBinder
                     }
                 });
 
-                // Filtered lists to not include removed elements
+                // Filtered lists to not include removed elements.
                 let existingKeys = binding.keys.filter(whereNotNull);
                 let existingObjs = binding.objs.filter(whereNotNull);
 
-                let lastObj = binding.start; //Store reference to element to add new items after...
+                let lastObj = binding.start; //Store reference to element to add new items after.
                 let newObjs = [];
 
                 newKeys.forEach((key) => {
                     let obj = null;
 
                     if (keysToAdd.includes(key)) {
-                        // Add new item
+                        // Add new item.
                         obj = JSBinder.#deserializeHTML(binding.html.replace(RGX_VARIABLE_ALIAS, `${binding.list}[{${key}}]`));
                         lastObj.after(obj);
                         JSBinder.#dispatchEvent(obj, "each", { action: "add" });
                         counter++;
                     } else {
-                        // Reorder existing items if needed
+                        // Reorder existing items if needed.
                         const index = existingKeys.indexOf(key);
                         obj = existingObjs[index];
 
@@ -713,6 +757,7 @@ class JSBinder
 
         #RGX_FOR_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)$/;
 
+        // Finds data-for elements with range specifications and stores template HTML with comment markers.
         register = () => {
             this.#pruneDetached();
 
@@ -739,12 +784,13 @@ class JSBinder
                         end, 
                         alias, 
                         where,
-                        fromTree: new JSBinder.#ExpressionTree(binder, from), 
-                        toTree: new JSBinder.#ExpressionTree(binder, to),
+                        fromTree: new JSBinder.#Solver.ExpressionTree(binder, from), 
+                        toTree: new JSBinder.#Solver.ExpressionTree(binder, to),
                     });
                 });
         };
 
+        // Generates numeric ranges, filters by where clause, and updates DOM with matching elements.
         refresh = () => {
             let counter = 0;
 
@@ -822,6 +868,7 @@ class JSBinder
 
         #RGX_INTERPOLATION_DIRECTIVE = /\{\{(.+)\}\}/g;
 
+        // Scans text content and attributes for {{...}} expressions, extracting and storing them.
         register = () => {
             this.#pruneDetached();
 
@@ -887,6 +934,7 @@ class JSBinder
             return counter;
         };
 
+        // Evaluates interpolation expressions and updates text content or attribute values.
         refresh = () => {
             this.#bindings.forEach((binding) => {
                 const result = binding.expressions.reduce((text, expression, index) => text.replace("{"+index+"}", binder.#evaluate(expression)), binding.text) ?? "";
@@ -925,6 +973,7 @@ class JSBinder
 
         #getDomDepth = (node) => Array.from(function* (n) { while (n.parentElement) yield (n = n.parentElement); }(node)).length;
 
+        // Finds data-bind elements and stores their expressions with DOM depth for proper evaluation order.
         register = () => {
             this.#pruneDetached();
 
@@ -934,13 +983,14 @@ class JSBinder
 
                     this.#bindings.push({
                         obj, 
-                        expressionTree: new JSBinder.#ExpressionTree(binder, expression),
+                        expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression),
                         modified: new JSBinder.#ChangeDetector(), 
                         depth: this.#getDomDepth(obj),
                     });
                 });
         };
 
+        // Evaluates expressions and updates element content/values/attributes based on element type.
         refresh = () => {
             this.#bindings.sort((a, b) => b.depth - a.depth).forEach((binding) => {
                 const result = binding.expressionTree.evaluate();
@@ -1005,6 +1055,7 @@ class JSBinder
 
         #RGX_ATTRIBUTE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
+        // Scans for data-attr directives, parsing attribute:expression mappings.
         register = () => {
             this.#pruneDetached();
 
@@ -1024,12 +1075,13 @@ class JSBinder
                         this.#bindings.push({
                             obj, 
                             key, 
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression),
+                            expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression),
                             modified: new JSBinder.#ChangeDetector(),
                         });
                     });
                 });
 
+            // Custom [data-disabled] implementation of [data-attr], to enable/disable form elements.
             binder.#queryDirectives("[data-disabled]")
                 ((obj) => {
                     const expression = JSBinder.#consumeDataset(obj)("disabled");
@@ -1037,12 +1089,13 @@ class JSBinder
                     this.#bindings.push({
                         obj,
                         key: "disabled",
-                        expressionTree: new JSBinder.#ExpressionTree(binder, "(" + expression + ") ? 'disabled' : null"),
+                        expressionTree: new JSBinder.#Solver.ExpressionTree(binder, "(" + expression + ") ? 'disabled' : null"),
                         modified: new JSBinder.#ChangeDetector(),
                     });
                 });
         };
 
+        // Evaluates expressions and sets/removes attributes based on results.
         refresh = () => {
             this.#bindings.forEach((binding) => {
                 const result = binding.expressionTree.evaluate();
@@ -1067,6 +1120,7 @@ class JSBinder
 
         #RGX_CLASS_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
+        // Finds data-class directives and parses class:expression mappings.
         register = () => {
             this.#pruneDetached();
 
@@ -1082,13 +1136,14 @@ class JSBinder
                         this.#bindings.push({
                             obj, 
                             key, 
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
+                            expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression), 
                             modified: new JSBinder.#ChangeDetector(),
                         });
                     });
                 });
         };
 
+        // Evaluates expressions and toggles CSS classes based on boolean results.
         refresh = () => {
             this.#bindings.forEach((binding) => {
                 const result = binding.expressionTree.evaluate();
@@ -1114,6 +1169,7 @@ class JSBinder
 
         #RGX_STYLE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
+        // Scans for data-style directives, parsing CSS property:expression mappings.
         register = () => {
             this.#pruneDetached();
 
@@ -1129,13 +1185,14 @@ class JSBinder
                         this.#bindings.push({
                             obj, 
                             key: this.#toKebabCase(key),
-                            expressionTree: new JSBinder.#ExpressionTree(binder, expression), 
+                            expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression), 
                             modified: new JSBinder.#ChangeDetector(),
                         });
                     });
                 });
         };
 
+        // Evaluates expressions and applies/removes inline styles based on results.
         refresh = () => {
             this.#bindings.forEach((binding) => {
                 const result = binding.expressionTree.evaluate();
@@ -1157,6 +1214,7 @@ class JSBinder
 
         #RGX_ONCLICK_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
 
+        // Attaches click event listeners that mutate state based on target:expression mappings.
         register = () => {
             binder.#queryDirectives("[data-onclick]")
                 ((obj) => {
@@ -1190,6 +1248,7 @@ class JSBinder
         #RGX_ONCHANGE_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
         #RGX_VARIABLE_VALUE = JSBinder.#rgxFormatVariable("value");
 
+        // Attaches input/change event listeners that mutate state using form values in expressions.
         register = () => {
             binder.#queryDirectives("[data-onchange]")
                 ((obj) => {
@@ -1330,6 +1389,8 @@ class JSBinder
         if (count > 0) this.#register();
     };
 
+
+    //ToDo: Add observder to automatically run dispose when root element is removed from dom?
     #dispose = () => {
         this.#abortController.abort();
         this.#settings.root.removeAttribute("data-jsbinder");
