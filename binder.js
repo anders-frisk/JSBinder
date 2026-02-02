@@ -164,6 +164,7 @@ class JSBinder
         };
 
         this.#state = recurse(this.#state, data);
+        this.#stateUpdated = true;
         this.#needsRefresh = true;
         this.#queueTasks();
     };
@@ -249,7 +250,7 @@ class JSBinder
         return this.#createPath(exp).reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
     };
 
-    // Mutates state by updating och removing a value
+    // Mutates state by updating or removing a value
     #mutateState = (exp, value) => {
         const path = this.#createPath(exp.trim());
         const key = path.pop();
@@ -257,6 +258,7 @@ class JSBinder
         const target = path.reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
         if (target) {
             target[key] = value;
+            this.#stateUpdated = true;
             this.#needsRefresh = true;
             this.#queueTasks();
         }
@@ -397,6 +399,42 @@ class JSBinder
                 return data;
             };
 
+            static #prefixOperations =
+            [
+                ["!!", (x) => !!x],
+                ["!",  (x) =>  !x],
+                ["~",  (x) =>  ~x],
+                ["-",  (x) => 0-x],
+                ["+",  (x) => 0+x],
+            ];
+
+            static #infixOperations =
+            [
+                ["**",  (x, y) => x **  y], 
+                ["*",   (x, y) => x *   y], 
+                ["/",   (x, y) => x /   y], 
+                ["%",   (x, y) => x %   y], 
+                ["+",   (x, y) => x +   y], 
+                ["-",   (x, y) => x -   y], 
+                ["<<",  (x, y) => x <<  y],
+                [">>",  (x, y) => x >>  y],
+                [">>>", (x, y) => x >>> y],
+                ["===", (x, y) => x === y],
+                ["==",  (x, y) => x ==  y],
+                ["!==", (x, y) => x !== y],
+                ["!=",  (x, y) => x !=  y],
+                [">=",  (x, y) => x >=  y],
+                [">",   (x, y) => x >   y],
+                ["<=",  (x, y) => x <=  y],
+                ["<",   (x, y) => x <   y],
+                ["&",   (x, y) => x &   y],
+                ["^",   (x, y) => x ^   y],
+                ["|",   (x, y) => x |   y],
+                ["&&",  (x, y) => x &&  y],
+                ["||",  (x, y) => x ||  y],
+                ["??",  (x, y) => x ??  y],
+            ];
+
             #evaluate = (tree) => {
                 // [[1, "==", 2], "?", "'yes'", ":", "'no'" ] >> ["'no'"]
                 const handleTernary = (data) => {
@@ -412,41 +450,11 @@ class JSBinder
 
                 // ["!", true] >> [false]
                 const handlePrefixOperations = (data) => 
-                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, [
-                        ["!!", (x) => !!x],
-                        ["!",  (x) =>  !x],
-                        ["~",  (x) =>  ~x],
-                        ["-",  (x) => 0-x],
-                        ["+",  (x) => 0+x],
-                    ]);
+                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, JSBinder.#Solver.#Evaluator.#prefixOperations);
 
                 // [1, "+", 2] >> [3]
                 const handleInfixOperations = (data) =>
-                    JSBinder.#Solver.#Evaluator.#evaluateInfixOperations(data, [
-                        ["**",  (x, y) => x **  y], 
-                        ["*",   (x, y) => x *   y], 
-                        ["/",   (x, y) => x /   y], 
-                        ["%",   (x, y) => x %   y], 
-                        ["+",   (x, y) => x +   y], 
-                        ["-",   (x, y) => x -   y], 
-                        ["<<",  (x, y) => x <<  y],
-                        [">>",  (x, y) => x >>  y],
-                        [">>>", (x, y) => x >>> y],
-                        ["===", (x, y) => x === y],
-                        ["==",  (x, y) => x ==  y],
-                        ["!==", (x, y) => x !== y],
-                        ["!=",  (x, y) => x !=  y],
-                        [">=",  (x, y) => x >=  y],
-                        [">",   (x, y) => x >   y],
-                        ["<=",  (x, y) => x <=  y],
-                        ["<",   (x, y) => x <   y],
-                        ["&",   (x, y) => x &   y],
-                        ["^",   (x, y) => x ^   y],
-                        ["|",   (x, y) => x |   y],
-                        ["&&",  (x, y) => x &&  y],
-                        ["||",  (x, y) => x ||  y],
-                        ["??",  (x, y) => x ??  y],
-                    ]);
+                    JSBinder.#Solver.#Evaluator.#evaluateInfixOperations(data, JSBinder.#Solver.#Evaluator.#infixOperations);
 
                 // Recursive parse tree nodes to values.
                 // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
@@ -1167,7 +1175,7 @@ class JSBinder
 
         #toKebabCase = (text) => text.trim().replace(/([a-z])([A-Z])/g, (_, a, b) => `${a}-${b.toLowerCase()}`); // "marginTop" >> "margin-top"
 
-        #RGX_STYLE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
+        #RGX_STYLE_DIRECTIVE = /^(['"])((?:--)?[a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
         // Scans for data-style directives, parsing CSS property:expression mappings.
         register = () => {
@@ -1359,6 +1367,7 @@ class JSBinder
         };
     })(this);
 
+    #stateUpdated = false;
     #needsRegister = false;
     #needsRefresh = false;
 
@@ -1372,6 +1381,7 @@ class JSBinder
         window.queueMicrotask(() => {
             this.#microtaskQueued = false;
              
+            if (this.#stateUpdated)  { this.#stateUpdated = false; JSBinder.#dispatchEvent(this.#settings.root, "stateupdated", {}); }
             if (this.#needsRegister) { this.#needsRegister = false; this.#register(); }
             if (this.#needsRefresh)  { this.#needsRefresh = false; this.#refresh(); }
         });
