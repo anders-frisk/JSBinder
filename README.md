@@ -17,31 +17,26 @@
 ## Table of Contents
 
 - [Overview](#overview)
-- [Why JSBinder?](#why-jsbinder)
-- [Getting Started](#getting-started)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Configuration](#configuration)
-- [Core Concepts](#core-concepts)
-  - [State Management](#state-management)
-  - [Directives](#directives)
-  - [Expressions](#expressions)
-- [API Reference](#api-reference)
-  - [Constructor](#constructor)
-  - [State Methods](#state-methods)
-  - [Instance Methods](#instance-methods)
-- [Directives Guide](#directives-guide)
-  - [Data Binding](#data-binding)
-  - [Conditional Rendering](#conditional-rendering)
-  - [List Rendering](#list-rendering)
-  - [Attributes and Styling](#attributes-and-styling)
-  - [Event Handling](#event-handling)
-  - [Templates](#templates)
-- [Advanced Usage](#advanced-usage)
-  - [Custom Functions](#custom-functions)
-  - [Event System](#event-system)
-  - [Performance Optimization](#performance-optimization)
+- [Directives](#directives)
+  - [data-bind - Binding state to DOM](#data-bind)
+  - [data-if - Conditional rendering](#data-if)
+  - [data-for - Range-based iteration](#data-for)
+  - [data-each - List iteration with filtering and sorting](#data-each)
+  - [data-attr - Dynamic attributes](#data-attr)
+  - [data-class - Conditional CSS classes](#data-class)
+  - [data-style - Dynamic inline styles](#data-style)
+  - [data-onclick - Click event handlers](#data-onclick)
+  - [data-onchange - Change event handlers](#data-onchange)
+  - [data-template / data-render - Template definitions and rendering](#data-template-and-data-render)
+- [State Management](#state-management)
+- [Expressions](#expressions)
+- [Custom functions](#custom-functions)
+- [Options](#options)
+- [Events](#events)
 - [Examples](#examples)
+  - [Table with Filter](#table-with-filter)
+  - [Table with Paging](#table-with-paging)
+  - [Recursive Tree](#recursive-tree)
 - [Browser Support](#browser-support)
 - [License](#license)
 
@@ -50,6 +45,8 @@
 ## Overview
 
 JSBinder is a lightweight, zero-dependency JavaScript library that brings reactive data binding to vanilla JavaScript applications. With an intuitive declarative syntax using HTML data attributes, JSBinder makes it simple to build dynamic, interactive web applications without the complexity of larger frameworks.
+
+JSBinder bridges the gap between vanilla JavaScript and full-featured frameworks. It provides reactive capabilities without build steps, complex tooling, or steep learning curves.
 
 **Key Features:**
 
@@ -64,399 +61,48 @@ JSBinder is a lightweight, zero-dependency JavaScript library that brings reacti
 - **Two-Way Binding** - Seamless synchronization between UI and state
 - **Production Ready** - Battle-tested and used in production environments worldwide
 
----
-
-## Why JSBinder?
-
-### Simplicity Without Sacrifice
-
-JSBinder bridges the gap between vanilla JavaScript and full-featured frameworks. It provides reactive capabilities without build steps, complex tooling, or steep learning curves.
-
-```html
-<!-- Simple reactive counter in pure HTML -->
-<div>
-  <p>Count: {{count}}</p>
-  <button data-onclick="count = count + 1">Increment</button>
-</div>
-
-<script>
-  const binder = new JSBinder();
-  binder.setState({ count: 0 });
-  binder.scan();
-</script>
-```
-
-### When to Use JSBinder
-
-**Ideal For:**
-- Progressive enhancement of existing websites
-- Applications requiring minimal bundle size
-- Projects without build tooling
-- Rapid prototyping and MVPs
-- Teams familiar with vanilla JavaScript
-- Server-rendered applications with interactive components
-
----
-
-## Getting Started
-
-### Installation
-
-Download [binder.js](binder.js) and include it in your HTML:
-
-```html
-<script src="binder.js"></script>
-```
-
 ### Quick Start
 
-Create your first reactive application in three simple steps:
+Create your first reactive application in a few simple steps:
 
 ```html
 <!DOCTYPE html>
 <html>
 <head>
   <title>JSBinder Quick Start</title>
-  <script src="binder.js"></script>
+  <script src="binder.js"></script> <!-- 1. Include JSBinder library -->
 </head>
 <body>
-  <div id="app">
-    <h1>{{message}}</h1>
-    <input type="text" data-bind="message" data-onchange="message = @value">
+  <div>
+    <!-- 2. Prepare the HTML with bindings -->
+    <p>Count: {{count}}</p>
+    <button data-onclick="count = count + 1">Increment</button>
   </div>
   <script>
-    // 1. Create a JSBinder instance
-    const binder = new JSBinder({ root: document.getElementById('app') });
+    // 3. Create a JSBinder instance
+    const binder = new JSBinder();
     
-    // 2. Initialize state
-    binder.setState({ 
-      message: 'Hello, JSBinder!' 
-    });
+    // 4. Initialize state
+    binder.setState({ count: 0 });
     
-    // 3. Scan for directives
+    // 5. Scan for directives
     binder.scan();
   </script>
 </body>
 </html>
 ```
 
-### Configuration
-
-JSBinder accepts an optional configuration object during initialization:
-
-```javascript
-const binder = new JSBinder({
-  root: document.getElementById('app') // Default: document.body
-});
-```
-
-**Configuration Options:**
-
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `root` | HTMLElement | `document.body` | Root element for binding scope. All directives are scoped to this element and its descendants. |
+**That's it.** No build tools, no virtual DOM, no complex setup—just reactive HTML with vanilla JavaScript.
 
 ---
 
-## Core Concepts
-
-### State Management
-
-JSBinder uses a centralized state object that triggers UI updates when modified.
-
-#### Setting State
-
-Update state with an object:
-
-```javascript
-binder.setState({ 
-  title: "JSBinder",
-  description: "A JavaScript library for reactive data binding." 
-});
-```
-
-Update state with a function (for accessing current state):
-
-```javascript
-binder.setState((current) => ({ 
-  items: [...current.items, { id: 4, name: 'New Item' }] 
-}));
-```
-
-Remove properties by setting to `undefined`:
-
-```javascript
-binder.setState({ temporaryData: undefined });
-```
-
-#### Getting State
-
-Retrieve a deep copy of the current state:
-
-```javascript
-const state = binder.getState();
-console.log(state.title); // "JSBinder"
-```
-
-**Note:** `getState()` returns a copy. Modifying it does not affect the actual state.
-
-### Directives
+## Directives
 
 Directives are special HTML attributes prefixed with `data-` that bind DOM elements to your application state. They provide declarative control over rendering, styling, and behavior.
 
-**Available Directives:**
-
-- `data-bind` - Two-way data binding
-- `data-if` - Conditional rendering
-- `data-for` - Range-based iteration
-- `data-each` - List iteration with filtering and sorting
-- `data-attr` - Dynamic attributes
-- `data-class` - Conditional CSS classes
-- `data-style` - Dynamic inline styles
-- `data-onclick` - Click event handlers
-- `data-onchange` - Change event handlers
-- `data-template` - Template definitions
-- `data-render` - Template rendering
-
-### Expressions
-
-Expressions are JavaScript-like statements evaluated within directives and interpolations. They have access to the current state and support most JavaScript operators.
-
-**Supported Operations:**
-
-- **Arithmetic:** `+`, `-`, `*`, `/`, `%`, `**`
-- **Comparison:** `==`, `===`, `!=`, `!==`, `>`, `>=`, `<`, `<=`
-- **Logical:** `&&`, `||`, `??`, `!`, `!!`
-- **Bitwise:** `&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`
-- **Ternary:** `condition ? true : false`
-- **Parentheses:** `(expression)`
-- **Literals:** strings, numbers, booleans, null, undefined
-- **Custom Functions:** `#functionName(arg)`
-
-**Interpolation Syntax:**
-
-```html
-<div>{{expression}}</div>
-<img src="{{imageUrl}}" alt="{{imageTitle}}">
-<p>Total: {{price * quantity}}</p>
-<span>{{items.length}} {{items.length === 1 ? 'item' : 'items'}}</span>
-```
-
 ---
 
-## API Reference
-
-### Constructor
-
-#### `new JSBinder(options)`
-
-Creates a new JSBinder instance.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `options` | Object | No | Configuration options |
-| `options.root` | HTMLElement | No | Root element for binding scope (default: `document.body`) |
-
-**Returns:** JSBinder instance
-
-**Example:**
-
-```javascript
-const binder = new JSBinder({ root: document.getElementById('app') });
-```
-
----
-
-### State Methods
-
-#### `setState(data)`
-
-Updates the application state and triggers a reactive refresh of all bindings.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `data` | Object \| Function | Yes | State updates or function returning updates |
-
-**Function Signature:** `(currentState) => updates`
-
-**Returns:** void
-
-**Examples:**
-
-```javascript
-// Object update
-binder.setState({ 
-  username: 'john_doe',
-  isLoggedIn: true 
-});
-
-// Functional update
-binder.setState((current) => ({ 
-  count: current.count + 1 
-}));
-
-// Array manipulation
-binder.setState((current) => ({
-  todos: [...current.todos, { id: Date.now(), text: 'New task' }]
-}));
-
-// Remove property
-binder.setState({ temporaryFlag: undefined });
-```
-
-**Notes:**
-- State updates are shallow-merged
-- Setting a property to `undefined` removes it from state
-- Updates are batched and processed in microtasks for performance
-- Triggers `jsbinder-stateupdated` event on root element
-
----
-
-#### `getState()`
-
-Returns a deep clone of the current state object.
-
-**Returns:** Object (deep copy of state)
-
-**Example:**
-
-```javascript
-const currentState = binder.getState();
-console.log(currentState.count); // Access state properties
-
-// Safe to modify without affecting actual state
-currentState.count = 999;
-console.log(binder.getState().count); // Original value unchanged
-```
-
-**Notes:**
-- Returns a copy - modifications do not affect actual state
-- Use `setState()` to make state changes
-- Useful for debugging and logging
-
----
-
-### Instance Methods
-
-#### `scan()`
-
-Manually triggers a scan for new DOM elements with data binding attributes. Use this when dynamically adding new elements outside of JSBinder's control.
-
-**Returns:** void
-
-**Examples:**
-
-```javascript
-// After inserting new HTML
-document.getElementById('container').innerHTML += '<div data-bind="newData"></div>';
-binder.scan();
-
-// After AJAX content load
-fetch('/api/template')
-  .then(response => response.text())
-  .then(html => {
-    document.getElementById('dynamic-content').innerHTML = html;
-    binder.scan();
-  });
-
-// After creating elements programmatically
-const newElement = document.createElement('div');
-newElement.setAttribute('data-bind', 'dynamicValue');
-document.body.appendChild(newElement);
-binder.scan();
-```
-
-**Notes:**
-- Scanning is batched in microtasks for performance
-- Not needed for elements created by JSBinder directives (data-if, data-each, etc.)
-- Safe to call multiple times - operations are deduplicated
-
----
-
-#### `addFunction(name, method)`
-
-Registers a custom function for use in data binding expressions.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `name` | String | Yes | Function name (valid JavaScript identifier) |
-| `method` | Function | Yes | Function with exactly one parameter |
-
-**Returns:** void
-
-**Examples:**
-
-```javascript
-// Register rounding function
-binder.addFunction('round', (x) => Math.round(x));
-
-// Use in HTML
-// <span>{{#round(price)}}</span>
-
-// Register formatting function
-binder.addFunction('currency', (value) => 
-  new Intl.NumberFormat('en-US', { 
-    style: 'currency', 
-    currency: 'USD' 
-  }).format(value)
-);
-
-// Use in HTML
-// <p>Total: {{#currency(total)}}</p>
-
-// Register date formatting
-binder.addFunction('formatDate', (timestamp) => 
-  new Date(timestamp).toLocaleDateString()
-);
-```
-
-**Notes:**
-- Functions are called with `#` prefix in expressions
-- Must accept exactly one argument
-- Name must be a valid JavaScript identifier
-- Functions have access to the passed argument only
-
----
-
-#### `dispose()`
-
-Disposes the JSBinder instance, removing all event listeners and cleaning up resources.
-
-**Returns:** void
-
-**Example:**
-
-```javascript
-// Clean up when component is destroyed
-let binder = new JSBinder({ root: document.getElementById('app') });
-
-// ... use binder ...
-
-// Clean up
-binder.dispose();
-binder = null;
-```
-
-**Notes:**
-- Removes all event listeners
-- Removes `data-jsbinder` attribute from root
-- Instance cannot be reused after disposal
-- Allows creating a new instance on the same root
-- Important for preventing memory leaks in SPAs
-
----
-
-## Directives Guide
-
-### Data Binding
-
-#### `data-bind`
+### data-bind
 
 Creates a binding between state and DOM elements. The behavior depends on the element type.
 
@@ -475,8 +121,7 @@ Creates a binding between state and DOM elements. The behavior depends on the el
 binder.setState({ 
   title: "Welcome",
   imageUrl: "logo.png",
-  isActive: true,
-  description: "<strong>Bold text</strong>"
+  isActive: true
 });
 ```
 
@@ -492,10 +137,6 @@ binder.setState({
 <!-- Checkbox -->
 <input type="checkbox" data-bind="isActive">
 <!-- Result: checked if isActive is true -->
-
-<!-- HTML content -->
-<div data-bind="description"></div>
-<!-- Result: <div><strong>Bold text</strong></div> -->
 
 <!-- Input value -->
 <input type="text" data-bind="title">
@@ -514,9 +155,7 @@ binder.setState({
 
 ---
 
-### Conditional Rendering
-
-#### `data-if`
+### data-if
 
 Conditionally renders an element based on an expression. When the expression is falsy, the element is replaced with a comment placeholder.
 
@@ -583,9 +222,7 @@ binder.setState({ activeTab: 'profile' });
 
 ---
 
-### List Rendering
-
-#### `data-for`
+### data-for
 
 Generates multiple elements by iterating over a numeric range.
 
@@ -654,7 +291,7 @@ binder.setState({
 
 ---
 
-#### `data-each`
+### data-each
 
 Iterates over arrays with advanced filtering, sorting, and transformation capabilities.
 
@@ -755,9 +392,7 @@ binder.setState({ planets });
 
 ---
 
-### Attributes and Styling
-
-#### `data-attr`
+### data-attr
 
 Dynamically sets HTML attributes based on expressions.
 
@@ -811,7 +446,7 @@ JSBinder also supports direct attribute directives:
 
 ---
 
-#### `data-class`
+### data-class
 
 Conditionally adds or removes CSS classes based on expressions.
 
@@ -876,7 +511,7 @@ binder.setState({
 
 ---
 
-#### `data-style`
+### data-style
 
 Dynamically applies inline CSS styles based on expressions.
 
@@ -944,9 +579,7 @@ binder.setState({
 
 ---
 
-### Event Handling
-
-#### `data-onclick`
+### data-onclick
 
 Handles click events and updates state directly from HTML.
 
@@ -1024,7 +657,7 @@ binder.setState({
 
 ---
 
-#### `data-onchange`
+### data-onchange
 
 Handles input change events with the special `@value` variable.
 
@@ -1116,9 +749,7 @@ binder.setState({
 
 ---
 
-### Templates
-
-#### `data-template` and `data-render`
+### data-template and data-render`
 
 Define reusable templates with recursive rendering capabilities.
 
@@ -1235,20 +866,99 @@ binder.setState({ treeData });
 
 ---
 
-## Advanced Usage
+### State Management
 
-### Custom Functions
+#### `setState(data)`
+
+Updates the application state and triggers a reactive refresh of all bindings.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `data` | Object \| Function | Yes | State updates or function returning updates |
+
+**Function Signature:** `(currentState) => updates`
+
+**Returns:** void
+
+**Examples:**
+
+```javascript
+// Object update
+binder.setState({ 
+  username: 'john_doe',
+  isLoggedIn: true 
+});
+
+// Functional update
+binder.setState((current) => ({ 
+  count: current.count + 1 
+}));
+
+// Array manipulation
+binder.setState((current) => ({
+  todos: [...current.todos, { id: Date.now(), text: 'New task' }]
+}));
+
+// Remove property
+binder.setState({ temporaryFlag: undefined });
+```
+
+**Notes:**
+- State updates are shallow-merged
+- Setting a property to `undefined` removes it from state
+- Updates are batched and processed in microtasks for performance
+- Triggers `jsbinder-stateupdated` event on root element
+
+---
+
+#### `getState()`
+
+Returns a deep clone of the current state object.
+
+**Returns:** Object (deep copy of state)
+
+**Notes:**
+- Returns a copy - modifications do not affect actual state
+- Use `setState()` to make state changes
+- Useful for debugging and logging
+
+---
+
+## Expressions
+
+Expressions are JavaScript-like statements evaluated within directives and interpolations. They have access to the current state and support most JavaScript operators.
+
+**Supported Operations:**
+
+- **Arithmetic:** `+`, `-`, `*`, `/`, `%`, `**`
+- **Comparison:** `==`, `===`, `!=`, `!==`, `>`, `>=`, `<`, `<=`
+- **Logical:** `&&`, `||`, `??`, `!`, `!!`
+- **Bitwise:** `&`, `|`, `^`, `~`, `<<`, `>>`, `>>>`
+- **Ternary:** `condition ? true : false`
+- **Parentheses:** `(expression)`
+- **Literals:** strings, numbers, booleans, null, undefined
+- **Custom Functions:** `#functionName(arg)`
+
+---
+
+## Custom Functions
 
 Extend expression capabilities with custom functions.
 
-**Registration:**
+#### `addFunction(name, method)`
 
-```javascript
-binder.addFunction('functionName', (arg) => {
-  // Return processed value
-  return result;
-});
-```
+Registers a custom function for use in data binding expressions.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `name` | String | Yes | Function name (valid JavaScript identifier) |
+| `method` | Function | Yes | Function with exactly one parameter |
+
+**Returns:** void
 
 **Usage in Expressions:** `#functionName(expression)`
 
@@ -1268,34 +978,10 @@ binder.addFunction('capitalize', (str) =>
   str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
 );
 
-// Date formatting
-binder.addFunction('formatDate', (timestamp) => 
-  new Date(timestamp).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric'
-  })
-);
-
-// Currency formatting
-binder.addFunction('currency', (value) => 
-  new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD'
-  }).format(value)
-);
-
 // Validation
 binder.addFunction('isEmail', (email) => 
   /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 );
-
-// Custom logic
-binder.addFunction('discount', (price) => {
-  if (price > 100) return price * 0.8; // 20% off
-  if (price > 50) return price * 0.9;  // 10% off
-  return price;
-});
 ```
 
 **Usage in HTML:**
@@ -1309,29 +995,41 @@ binder.addFunction('discount', (price) => {
 <h1>{{#uppercase(title)}}</h1>
 <p>{{#capitalize(status)}}</p>
 
-<!-- Date formatting -->
-<p>Published: {{#formatDate(article.timestamp)}}</p>
-
-<!-- Currency -->
-<p>Price: {{#currency(product.price)}}</p>
-<p>Discount Price: {{#currency(#discount(product.price))}}</p>
-
 <!-- Validation -->
 <input type="email" 
        data-bind="email"
        data-class="'invalid' : email !== '' && !#isEmail(email)">
 ```
-
-**Best Practices:**
-- Keep functions pure (no side effects)
-- Return consistent types
-- Handle edge cases (null, undefined)
-- Use descriptive names
-- Document complex functions
+**Notes:**
+- Functions are called with `#` prefix in expressions
+- Must accept exactly one argument
+- Name must be a valid JavaScript identifier
+- Functions have access to the passed argument only
 
 ---
 
-### Event System
+## Options
+
+Instanciating `new JSBinder()` can be made with an optional options parameter.
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+|------|------|----------|-------------|
+| `options` | Object | No | Configuration options |
+| `options.root` | HTMLElement | No | Root element for binding scope (default: `document.body`) |
+
+**Returns:** JSBinder instance
+
+**Example:**
+
+```javascript
+const binder = new JSBinder({ root: document.getElementById("app") });
+```
+
+---
+
+## Events
 
 JSBinder dispatches custom events for all directive updates, enabling fine-grained control and monitoring.
 
@@ -1363,143 +1061,9 @@ JSBinder dispatches custom events for all directive updates, enabling fine-grain
 document.body.addEventListener('jsbinder-bind', (e) => {
   console.log('Bind updated:', e.target, 'Value:', e.detail.value);
 });
-
-// Monitor conditional rendering
-document.body.addEventListener('jsbinder-if', (e) => {
-  console.log('Element', e.detail.action, ':', e.target);
-});
-
-// Track class changes
-document.body.addEventListener('jsbinder-class', (e) => {
-  console.log('Class', e.detail.key, e.detail.action, 'on', e.target);
-});
-
-// Global state change listener
-document.body.addEventListener('jsbinder-stateupdated', () => {
-  console.log('State updated:', binder.getState());
-});
-
-// Track list rendering
-let renderCount = 0;
-document.body.addEventListener('jsbinder-each', (e) => {
-  if (e.detail.action === 'add') renderCount++;
-  console.log('Total renders:', renderCount);
-});
 ```
 
-**Practical Use Cases:**
 
-```javascript
-// Analytics tracking
-document.body.addEventListener('jsbinder-bind', (e) => {
-  if (e.target.matches('[data-track]')) {
-    analytics.track('field_updated', {
-      field: e.target.getAttribute('data-track'),
-      value: e.detail.value
-    });
-  }
-});
-
-// Debugging
-const debugMode = true;
-if (debugMode) {
-  ['bind', 'if', 'each', 'for', 'class', 'style', 'attr'].forEach(directive => {
-    document.body.addEventListener(`jsbinder-${directive}`, (e) => {
-      console.log(`[JSBinder] ${directive}:`, e.target, e.detail);
-    });
-  });
-}
-
-// Performance monitoring
-let updateCount = 0;
-const startTime = performance.now();
-document.body.addEventListener('jsbinder-bind', () => {
-  updateCount++;
-  if (updateCount % 100 === 0) {
-    const elapsed = performance.now() - startTime;
-    console.log(`${updateCount} updates in ${elapsed.toFixed(2)}ms`);
-  }
-});
-
-// Custom animations
-document.body.addEventListener('jsbinder-if', (e) => {
-  if (e.detail.action === 'add') {
-    e.target.style.opacity = '0';
-    requestAnimationFrame(() => {
-      e.target.style.transition = 'opacity 0.3s';
-      e.target.style.opacity = '1';
-    });
-  }
-});
-```
-
----
-
-### Performance Optimization
-
-**Batching and Microtasks:**
-
-JSBinder automatically batches state updates and DOM operations using microtasks. Multiple `setState()` calls within the same execution context are batched together.
-
-```javascript
-// These three calls are batched into one update
-binder.setState({ count: 1 });
-binder.setState({ title: 'New Title' });
-binder.setState({ items: [...items, newItem] });
-// Only one DOM refresh occurs
-```
-
-**Efficient List Rendering:**
-
-```html
-<!-- ✓ Good: Use data-each with proper keys -->
-<div data-each="@item in items" data-key="@item.id">
-  {{@item.title}}
-</div>
-
-<!-- ✗ Avoid: Using data-for for large arrays -->
-<div data-for="@i" data-from="0" data-to="items.length - 1">
-  {{items[@i].title}}
-</div>
-```
-
-**Conditional Rendering vs Visibility:**
-
-```html
-<!-- For expensive content (removed from DOM) -->
-<div data-if="isVisible">
-  <ExpensiveComponent />
-</div>
-
-<!-- For frequent toggling (stays in DOM) -->
-<div data-class="'hidden' : !isVisible">
-  <SimpleContent />
-</div>
-```
-
-**Scoped Bindings:**
-
-```javascript
-// ✓ Good: Limit scope to container
-const binder = new JSBinder({ 
-  root: document.getElementById('app') 
-});
-
-// ✗ Avoid: Binding to entire document
-const binder = new JSBinder({ 
-  root: document.body 
-});
-```
-
-**Best Practices:**
-
-1. **Use appropriate directives:** `data-each` for lists, `data-if` for conditionals
-2. **Provide unique keys:** Always use `data-key` with `data-each`
-3. **Minimize expression complexity:** Extract complex logic to functions
-4. **Scope instances:** Create separate instances for independent components
-5. **Clean up:** Call `dispose()` when components are removed
-6. **Batch updates:** Group related state changes in a single `setState()`
-7. **Use events sparingly:** Only listen to events you need
 
 ---
 
