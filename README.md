@@ -18,7 +18,7 @@
 
 - [Overview](#overview)
 - [Directives](#directives)
-  - [data-bind - Binding state to DOM](#data-bind)
+  - [data-bind - Binding state to elements](#data-bind)
   - [data-if - Conditional rendering](#data-if)
   - [data-for - Range-based iteration](#data-for)
   - [data-each - List iteration with filtering and sorting](#data-each)
@@ -70,7 +70,8 @@ Create your first reactive application in a few simple steps:
 <html>
 <head>
   <title>JSBinder Quick Start</title>
-  <script src="binder.js"></script> <!-- 1. Include JSBinder library -->
+  <!-- 1. Include JSBinder library -->
+  <script src="binder.js"></script>
 </head>
 <body>
   <div>
@@ -98,7 +99,7 @@ Create your first reactive application in a few simple steps:
 
 ## Directives
 
-Directives are special HTML attributes prefixed with `data-` that bind DOM elements to your application state. They provide declarative control over rendering, styling, and behavior.
+Directives are HTML attributes that binds DOM elements to your application state. They provide declarative control over rendering, styling, and behavior.
 
 ---
 
