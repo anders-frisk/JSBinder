@@ -69,17 +69,21 @@ Create your first reactive application in a few simple steps:
 <!DOCTYPE html>
 <html>
 <head>
-  <title>JSBinder Quick Start</title>
+  
   <!-- 1. Include JSBinder library -->
   <script src="binder.js"></script>
+
 </head>
 <body>
   <div>
+
     <!-- 2. Prepare the HTML with bindings -->
     <p>Count: {{count}}</p>
     <button data-onclick="count = count + 1">Increment</button>
+
   </div>
   <script>
+
     // 3. Create a JSBinder instance
     const binder = new JSBinder();
     
@@ -88,6 +92,7 @@ Create your first reactive application in a few simple steps:
     
     // 5. Scan for directives
     binder.scan();
+    
   </script>
 </body>
 </html>
