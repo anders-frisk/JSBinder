@@ -185,7 +185,7 @@ class JSBinder
      * const state = binder.getState();
      * state.count = 999; // Does not change the actual state
      */
-    getState = () => typeof window.structuredClone !== "undefined" ? window.structuredClone(this.#state) : JSON.parse(JSON.stringify(this.#state)); // Polyfill, `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 14.4 (Mar 2022), Edge 98 (Jan 2022).`
+    getState = () => typeof window.structuredClone !== "undefined" ? window.structuredClone(this.#state) : JSON.parse(JSON.stringify(this.#state)); // Polyfill, `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 15.4 (Mar 2022), Edge 98 (Jan 2022).`
 
     /**
      * Registers a custom function that can be used in data binding expressions.
