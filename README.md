@@ -52,7 +52,7 @@ JSBinder bridges the gap between vanilla JavaScript and full-featured frameworks
 **Key Features:**
 
 - **Zero Dependencies** - Pure vanilla JavaScript with no external dependencies
-- **Lightweight** - Approximately 15KB minified, perfect for performance-conscious applications
+- **Lightweight** - Perfect for performance-conscious applications
 - **Declarative Syntax** - Use familiar HTML data attributes for all bindings
 - **Reactive State** - Automatic UI updates when state changes
 - **Rich Directive Set** - Comprehensive collection of directives for common UI patterns
@@ -60,7 +60,6 @@ JSBinder bridges the gap between vanilla JavaScript and full-featured frameworks
 - **Template Support** - Reusable templates with recursive rendering capabilities
 - **Expression Engine** - Powerful expression evaluator supporting JavaScript operators
 - **Two-Way Binding** - Seamless synchronization between UI and state
-- **Production Ready** - Battle-tested and used in production environments worldwide
 
 ### Quick Start
 
