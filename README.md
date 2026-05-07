@@ -10,9 +10,9 @@
 
 *Build reactive, data-driven web applications with declarative HTML and zero dependencies*
 
-</div>
+**Note: Docs are partly created with AI and not fully validated!**
 
----
+</div>
 
 ## Table of Contents
 

@@ -8,17 +8,18 @@
  * JSBinder provides declarative data binding through HTML data attributes:
  * 
  * Directives:
+ * - data-bind: Binding state to elements
  * - data-if: Conditional rendering
  * - data-each: List rendering with keys, where clauses, ordering
  * - data-for: Range-based iteration
- * - data-bind: Two-way data binding
  * - data-attr: Dynamic attributes
  * - data-class: Conditional CSS classes
  * - data-style: Dynamic inline styles
+ * - data-template / data-render: Template definition and rendering
+ * 
+ * Reversed Directives:
  * - data-onclick: Click event handlers with state mutations
  * - data-onchange: Change event handlers for form inputs
- * - data-template: Reusable templates
- * - data-render: Template rendering
  * 
  * Interpolation:
  * - {{expression}}: Evaluate expressions in text content or attributes
