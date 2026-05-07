@@ -369,7 +369,7 @@ binder.setState({ planets });
     {{@planet.name}}
   </li>
 </ul>
-<!-- Result: 3rd, 4th, and 5th planets -->
+<!-- Result: 4rd, 5th, and 6th planets -->
 
 <!-- Distinct values -->
 <select>
@@ -396,7 +396,7 @@ binder.setState({ planets });
 **Notes:**
 - `data-key` is required and enables efficient DOM updates
 - Multiple modifiers can be combined in any order
-- Evaluation order: where → distinct → orderby → skip → limit
+- Evaluation order: where → orderby → distinct → skip → limit
 
 ---
 
@@ -921,7 +921,7 @@ binder.setState({ temporaryFlag: undefined });
 ```
 
 **Notes:**
-- State updates are shallow-merged
+- State updates are deep-merged
 - Setting a property to `undefined` removes it from state
 - Updates are batched and processed in microtasks for performance
 - Triggers `jsbinder-statechanged` event on root element
@@ -1055,11 +1055,11 @@ JSBinder dispatches custom events for all directive updates, enabling fine-grain
 | Event | Directive | Detail Properties |
 |-------|-----------|-------------------|
 | `jsbinder-statechanged` | setState() | None |
-| `jsbinder-bind` | data-bind | `value` |
+| `jsbinder-bind` | data-bind (including interpolations) | `value` |
 | `jsbinder-if` | data-if | `action` ("add" \| "remove") |
 | `jsbinder-for` | data-for | `action` ("add" \| "remove") |
 | `jsbinder-each` | data-each | `action` ("add" \| "remove") |
-| `jsbinder-attr` | data-attr | `key`, `value` |
+| `jsbinder-attr` | data-attr (including interpolations) | `key`, `value` |
 | `jsbinder-class` | data-class | `key`, `action` ("add" \| "remove") |
 | `jsbinder-style` | data-style | `key`, `value` |
 | `jsbinder-render` | data-render | None |
@@ -1294,28 +1294,10 @@ JSBinder supports all modern browsers with ES6+ capabilities:
 
 | Browser | Minimum Version |
 |---------|----------------|
-| Chrome | 51+ |
-| Firefox | 54+ |
-| Safari | 10+ |
-| Edge | 15+ |
-| Opera | 38+ |
-
-**Required Features:**
-- ES6 Classes
-- Arrow Functions
-- Template Literals
-- Destructuring
-- Proxy (for reactive state)
-- CustomEvent
-- Microtask Queue (queueMicrotask)
-- structuredClone
-
-**Polyfills:**
-
-For older browser support, include polyfills for:
-- `queueMicrotask`
-- `structuredClone`
-- `CustomEvent`
+| Chrome | 88 (Jan 2021) |
+| Firefox | 90 (Jul 2021) |
+| Safari | 15.0 (Sep 2021) |
+| Edge | 88 (Jan 2021) |
 
 ---
 

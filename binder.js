@@ -129,7 +129,7 @@ class JSBinder
     /**
      * Updates the state object and triggers a refresh of all bindings.
      * Can accept either a plain object or a function that receives the current state and returns updates.
-     * State updates are shallow-merged. Setting a property to `undefined` removes it from the state.
+     * State updates are deep-merged. Setting a property to `undefined` removes it from the state.
      * 
      * @param {Object|Function} data - The state updates to apply, or a function that receives current state and returns updates.
      * @returns {void}
@@ -184,8 +184,8 @@ class JSBinder
      * const state = binder.getState();
      * state.count = 999; // Does not change the actual state
      */
-    getState = () => window.structuredClone(this.#state);
-    
+    getState = () => typeof window.structuredClone !== "undefined" ? window.structuredClone(this.#state) : JSON.parse(JSON.stringify(this.#state)); // Polyfill, `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 14.4 (Mar 2022), Edge 98 (Jan 2022).`
+
     /**
      * Registers a custom function that can be used in data binding expressions.
      * Functions are called with a single argument and prefixed with `#` in expressions.
@@ -715,7 +715,7 @@ class JSBinder
 
                 // Filter on distinct values if 'distinct' is defined.
                 if (binding.distinct !== null) {
-                    const distinctIndexes = Array.from(new Map(indexes.toReversed().map((index) => [binder.#evaluate(binding.distinct.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)), index])).values());
+                    const distinctIndexes = Array.from(new Map([...indexes].reverse().map((index) => [binder.#evaluate(binding.distinct.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)), index])).values());
                     indexes = indexes.filter((index) => distinctIndexes.includes(index));
                 }
 
@@ -958,7 +958,7 @@ class JSBinder
                         const m = attributes[i].value.match(this.#RGX_INTERPOLATION_DIRECTIVE);
 
                         if (m) {
-                            if ((JSBinder.#typeOf(element) === JSBinder.#TYPE.SELECT || JSBinder.#typeOf(element) === JSBinder.#TYPE.INPUT) && attributes[i].name.toLowerCase() === "value")
+                            if (([JSBinder.#TYPE.SELECT, JSBinder.#TYPE.INPUT, JSBinder.#TYPE.TEXTAREA].includes(JSBinder.#typeOf(element))) && attributes[i].name.toLowerCase() === "value")
                                 JSBinder.#warn("Binding attribute 'value' on form elements can only be done with 'data-bind'.");
 
                             this.#bindings.push({
@@ -1061,6 +1061,13 @@ class JSBinder
                         break;
                         
                     case JSBinder.#TYPE.INPUT:
+                        if (binding.modified.check(result)) {
+                            binding.obj.value = JSBinder.#isNullish(result) ? "" : String(result);
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
+                        }
+                        break;
+
+                    case JSBinder.#TYPE.TEXTAREA:
                         if (binding.modified.check(result)) {
                             binding.obj.value = JSBinder.#isNullish(result) ? "" : String(result);
                             JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
