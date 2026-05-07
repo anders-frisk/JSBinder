@@ -245,7 +245,7 @@ class JSBinder
         if (exp === "Infinity") return Infinity;
         if (exp === "NaN") return NaN;
 
-        JSBinder.#getInnerExpressions(exp).forEach(x => JSBinder.#apply(this.#evaluate(x))((evaluated) => exp = exp.replace(`[${x}]`, `.${evaluated}.`)));
+        [...JSBinder.#getInnerExpressions(exp)].forEach(x => JSBinder.#apply(this.#evaluate(x))((evaluated) => exp = exp.replace(`[${x}]`, `.${evaluated}.`)));
 
         return this.#createPath(exp).reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
     };
@@ -290,11 +290,12 @@ class JSBinder
             // Extract inner expressions and temporary replace with placeholder.
             // "[...]" >> "[{{exp#index#}}]"
             extractExpressions = (exp) => {
-                JSBinder.#getInnerExpressions(exp).forEach((match, index) => {
-                    this.#expressionMap.set(index, match);
-                    exp = exp.replace(`[${match}]`, `[{{exp${index}}}]`);
-                });
-                return exp;
+                [...JSBinder.#getInnerExpressions(exp)]
+                    .forEach((match, index) => {
+                        this.#expressionMap.set(index, match);
+                        exp = exp.replace(`[${match}]`, `[{{exp${index}}}]`);
+                    });
+                    return exp;
             };
 
             // Restore inner expressions.
@@ -376,11 +377,12 @@ class JSBinder
 
         // TreeEvaluator - Evaluates the constructed AST.
         static #Evaluator = class {
-            #binder;
+            #binderReference;
 
-            constructor(binder)
+            constructor(binderInstance)
             {
-                this.#binder = binder;
+                // Use WeakRef to avoid creating strong reference cycles between the evaluator and binder, allowing for proper garbage collection when the binder is no longer needed.
+                this.#binderReference = new WeakRef(binderInstance);
             }
 
             evaluate = (tree) => this.#evaluate(tree);
@@ -399,8 +401,7 @@ class JSBinder
                 return data;
             };
 
-            static #prefixOperations =
-            [
+            static #prefixOperations = [
                 ["!!", (x) => !!x],
                 ["!",  (x) =>  !x],
                 ["~",  (x) =>  ~x],
@@ -408,8 +409,7 @@ class JSBinder
                 ["+",  (x) => 0+x],
             ];
 
-            static #infixOperations =
-            [
+            static #infixOperations = [
                 ["**",  (x, y) => x **  y], 
                 ["*",   (x, y) => x *   y], 
                 ["/",   (x, y) => x /   y], 
@@ -436,6 +436,8 @@ class JSBinder
             ];
 
             #evaluate = (tree) => {
+                const binder = this.#binderReference.deref();
+
                 // [[1, "==", 2], "?", "'yes'", ":", "'no'" ] >> ["'no'"]
                 const handleTernary = (data) => {
                     const list = (x) => Array.isArray(x) ? x : [x];
@@ -446,7 +448,7 @@ class JSBinder
 
                 // [#round, 5.5] >> [6]
                 const handleFunctions = (data) =>
-                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, Object.entries(this.#binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
+                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, Object.entries(binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
 
                 // ["!", true] >> [false]
                 const handlePrefixOperations = (data) => 
@@ -460,7 +462,7 @@ class JSBinder
                 // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
                 const resolveLiterals = (input) => input
                     .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
-                    .map((x) => !Array.isArray(x) && !JSBinder.#Solver.#isFunction(x) && !JSBinder.#Solver.#isOperator(x) ? this.#binder.#resolveValue(x) : x);
+                    .map((x) => !Array.isArray(x) && !JSBinder.#Solver.#isFunction(x) && !JSBinder.#Solver.#isOperator(x) ? binder.#resolveValue(x) : x);
 
                 // Recursive solve tree.
                 const evaluateTree = (input) => JSBinder.#pipe(handleTernary, handleFunctions, handlePrefixOperations, handleInfixOperations, JSBinder.#unwrapSingleArray)(input.map((x) => Array.isArray(x) ? evaluateTree(x) : x));
@@ -504,10 +506,18 @@ class JSBinder
         };
     };
 
+    // Shorthand to evaluate an expression directly without manually creating an ExpressionTree instance.
     #evaluate = (expression) => (new JSBinder.#Solver.ExpressionTree(this, expression)).evaluate();
+    
 
-
-    static #TYPE = { CHECKBOX: "checkbox", INPUT: "input", SELECT: "select", IMG: "img", IFRAME: "iframe", TEXTAREA: "textarea" };
+    static #TYPE = {
+        CHECKBOX: "checkbox",
+        INPUT: "input",
+        SELECT: "select",
+        IMG: "img",
+        IFRAME: "iframe",
+        TEXTAREA: "textarea",
+    };
 
     static #typeOf = (obj) => {
         if (obj.matches("input[type='checkbox']")) return JSBinder.#TYPE.CHECKBOX;
@@ -535,6 +545,18 @@ class JSBinder
             .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !["[data-if]", "[data-each]", "[data-for]", "template"].some(x => !!obj.matches(x)))
             .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !obj.matches("[data-jsbinder]"))
             .forEach((obj) => callback(obj));
+    };
+
+    static #EVENT = {
+        IF: "if",
+        EACH: "each",
+        FOR: "for",
+        BIND: "bind",
+        ATTR: "attr",
+        CLASS: "class",
+        STYLE: "style",
+        RENDER: "render",
+        STATECHANGED: "statechanged",
     };
 
     // Helper function to dispatch custom JSBinder events.
@@ -584,10 +606,10 @@ class JSBinder
                 if (binding.modified.check(result)) {
                     if (result === true) {
                         binding.obj = JSBinder.#replaceObject(binding.obj)(JSBinder.#deserializeHTML(binding.html));
-                        JSBinder.#dispatchEvent(binding.obj, "if", { action: "add" });
+                        JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.IF, { action: "add" });
                         counter++;
                     } else {
-                        JSBinder.#dispatchEvent(binding.obj, "if", { action: "remove" });
+                        JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.IF, { action: "remove" });
                         binding.obj = JSBinder.#replaceObject(binding.obj)(document.createComment("if"));
                     }
                 }
@@ -599,12 +621,13 @@ class JSBinder
 
     // Each
     //
-    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-orderby="..."] [data-distinct="..."]
+    // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-page="..." data-pagesize="..."] [data-orderby="..."] [data-distinct="..."]
     //
-    // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item">{{@item}}</p>                                        >> <p>a</p><p>b</p>...
-    // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title">{{@item.title}}</p>                            >> <p>a</p>...
-    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-where="@number > 3">{{@number}}</p>       >> <p>4</p><p>5</p>...
-    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-skip="1" data-limit="2">{{@number}}</p>   >> <p>2</p><p>3</p>
+    // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item">{{@item}}</p>                                          >> <p>a</p><p>b</p>...
+    // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title">{{@item.title}}</p>                              >> <p>a</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-where="@number > 3">{{@number}}</p>         >> <p>4</p><p>5</p>...
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-skip="1" data-limit="2">{{@number}}</p>     >> <p>2</p><p>3</p>
+    // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-page="2" data-pagesize="5">{{@number}}</p>  >> <p>6</p>...<p>10</p>
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
     #eachDirective = ((binder) => new class {
@@ -620,12 +643,18 @@ class JSBinder
 
             binder.#queryDirectives("[data-each]")
                 ((obj) => {
-                    const [expression, key, where, skip, limit, orderby, distinct] = JSBinder.#consumeDataset(obj)("each", "key", "where", "skip", "limit", "orderby", "distinct");
+                    const [expression, key, where, skip, limit, orderby, distinct, pagesize, page] = JSBinder.#consumeDataset(obj)("each", "key", "where", "skip", "limit", "orderby", "distinct", "pagesize", "page");
                     const html = JSBinder.#cleanHTML(obj.outerHTML);
                     const [start, end] = JSBinder.#replaceObject(obj)(document.createComment("each"), document.createComment("/each"));
 
                     if (key === null)
                         return JSBinder.#error("'each' must have 'key' expression defined");
+
+                    if ((pagesize !== null || page !== null) && (skip !== null || limit !== null))
+                        return JSBinder.#error("'page' and 'pagesize' cannot be used in combination with 'skip' or 'limit'");
+
+                    if (pagesize !== null && page === null || page !== null && pagesize === null)
+                        return JSBinder.#error("'page' and 'pagesize' must be used together");
 
                     const m = expression.match(this.#RGX_EACH_DIRECTIVE);
 
@@ -648,6 +677,8 @@ class JSBinder
                         distinct,
                         limitTree: limit !== null ? new JSBinder.#Solver.ExpressionTree(binder, limit) : null,
                         skipTree: skip !== null ? new JSBinder.#Solver.ExpressionTree(binder, skip) : null,
+                        pageTree: page !== null ? new JSBinder.#Solver.ExpressionTree(binder, page) : null,
+                        pagesizeTree: pagesize !== null ? new JSBinder.#Solver.ExpressionTree(binder, pagesize) : null,
                     });
                 });
         };
@@ -659,9 +690,12 @@ class JSBinder
             this.#bindings.forEach((binding) => {
                 const whereNotIn = (other) => (x) => !other.includes(x);
                 const whereNotNull = (x) => x !== null;
-
+                
                 const skip = binding.skipTree !== null ? binding.skipTree.evaluate() : null;
                 const limit = binding.limitTree !== null ? binding.limitTree.evaluate() : null;
+
+                const page = binding.pageTree !== null ? binding.pageTree.evaluate() : null;
+                const pagesize = binding.pagesizeTree !== null ? binding.pagesizeTree.evaluate() : null;
 
                 const RGX_VARIABLE_ALIAS = JSBinder.#rgxFormatVariable(binding.alias);
 
@@ -689,8 +723,11 @@ class JSBinder
                 if (skip !== null) indexes = indexes.slice(skip);
                 if (limit !== null) indexes = indexes.slice(0, limit);
 
+                // Reduce list of indexes if 'page' and 'pagesize' are defined.
+                if (page !== null && pagesize !== null) indexes = indexes.slice((page - 1) * pagesize, page * pagesize);
+
                 // Calculate keys for each index.
-                const newKeys = indexes.map((index) => 
+                const nextKeys = indexes.map((index) => 
                     JSBinder.#apply(binder.#evaluate(binding.key.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)).toString().replace(/[^a-zA-Z0-9]/g, "_"))
                         ((key) => {
                             binder.#indexMap.set(`${binding.itemIndex}_${key}`, index);
@@ -698,13 +735,13 @@ class JSBinder
                         }));
 
                 // Compare keys to know what to add or remove.
-                const keysToRemove = binding.keys.filter(whereNotIn(newKeys));
-                const keysToAdd = newKeys.filter(whereNotIn(binding.keys));
+                const outgoingKeys = binding.keys.filter(whereNotIn(nextKeys));
+                const incomingKeys = nextKeys.filter(whereNotIn(binding.keys));
 
                 // Remove existing items.
                 binding.keys.forEach((key, i) => {
-                    if (keysToRemove.includes(key)) {
-                        JSBinder.#dispatchEvent(binding.objs[i], "each", { action: "remove" });
+                    if (outgoingKeys.includes(key)) {
+                        JSBinder.#dispatchEvent(binding.objs[i], JSBinder.#EVENT.EACH, { action: "remove" });
                         binding.objs[i].remove();
                         binding.objs[i] = null;
                         binding.keys[i] = null;
@@ -716,16 +753,16 @@ class JSBinder
                 let existingObjs = binding.objs.filter(whereNotNull);
 
                 let lastObj = binding.start; //Store reference to element to add new items after.
-                let newObjs = [];
+                let nextObjs = [];
 
-                newKeys.forEach((key) => {
+                nextKeys.forEach((key) => {
                     let obj = null;
 
-                    if (keysToAdd.includes(key)) {
+                    if (incomingKeys.includes(key)) {
                         // Add new item.
                         obj = JSBinder.#deserializeHTML(binding.html.replace(RGX_VARIABLE_ALIAS, `${binding.list}[{${key}}]`));
                         lastObj.after(obj);
-                        JSBinder.#dispatchEvent(obj, "each", { action: "add" });
+                        JSBinder.#dispatchEvent(obj, JSBinder.#EVENT.EACH, { action: "add" });
                         counter++;
                     } else {
                         // Reorder existing items if needed.
@@ -739,11 +776,11 @@ class JSBinder
                     }
 
                     lastObj = obj;
-                    newObjs.push(obj);
+                    nextObjs.push(obj);
                 });
 
-                binding.objs = newObjs;
-                binding.keys = newKeys;
+                binding.objs = nextObjs;
+                binding.keys = nextKeys;
             });
 
             return counter;
@@ -812,16 +849,16 @@ class JSBinder
                 const RGX_VARIABLE_ALIAS = JSBinder.#rgxFormatVariable(binding.alias);
 
                 // Create list of all keys/numbers to include, filtered by 'where' if defined.
-                const newKeys = [...function* () { for (let key = from; key <= to; key++) { if (binding.where === null || binder.#evaluate(binding.where.replace(RGX_VARIABLE_ALIAS, key))) yield(key); } }()];
+                const nextKeys = [...function* () { for (let key = from; key <= to; key++) { if (binding.where === null || binder.#evaluate(binding.where.replace(RGX_VARIABLE_ALIAS, key))) yield(key); } }()];
 
                 // Compare keys to know what to add or remove.
-                const keysToRemove = binding.keys.filter(whereNotIn(newKeys));
-                const keysToAdd = newKeys.filter(whereNotIn(binding.keys));
+                const outgoingKeys = binding.keys.filter(whereNotIn(nextKeys));
+                const incomingKeys = nextKeys.filter(whereNotIn(binding.keys));
 
                 // Remove existing items
                 binding.keys.forEach((key, i) => {
-                    if (keysToRemove.includes(key)) {
-                        JSBinder.#dispatchEvent(binding.objs[i], "for", { action: "remove" });
+                    if (outgoingKeys.includes(key)) {
+                        JSBinder.#dispatchEvent(binding.objs[i], JSBinder.#EVENT.FOR, { action: "remove" });
                         binding.objs[i].remove();
                         binding.objs[i] = null;
                         binding.keys[i] = null;
@@ -833,16 +870,16 @@ class JSBinder
                 let existingObjs = binding.objs.filter(whereNotNull);
 
                 let lastObj = binding.start; // Store reference to element to add new items after...
-                let newObjs = [];
+                let nextObjs = [];
 
-                newKeys.forEach((key) => {
+                nextKeys.forEach((key) => {
                     let obj = null;
 
-                    if (keysToAdd.includes(key)) {
+                    if (incomingKeys.includes(key)) {
                         // Add new item
                         obj = JSBinder.#deserializeHTML(binding.html.replace(RGX_VARIABLE_ALIAS, key));
                         lastObj.after(obj);
-                        JSBinder.#dispatchEvent(obj, "for", { action: "add" });
+                        JSBinder.#dispatchEvent(obj, JSBinder.#EVENT.FOR, { action: "add" });
                         counter++;
                     } else {
                         // Existing items...
@@ -851,11 +888,11 @@ class JSBinder
                     }
                     
                     lastObj = obj;
-                    newObjs.push(obj);
+                    nextObjs.push(obj);
                 });
 
-                binding.objs = newObjs;
-                binding.keys = newKeys;
+                binding.objs = nextObjs;
+                binding.keys = nextKeys;
             });
 
             return counter;
@@ -875,6 +912,11 @@ class JSBinder
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
 
         #RGX_INTERPOLATION_DIRECTIVE = /\{\{(.+)\}\}/g;
+
+        #INTERPOLATION_TYPE = {
+            TEXT: "text",
+            ATTRIBUTE: "attribute",
+        };
 
         // Scans text content and attributes for {{...}} expressions, extracting and storing them.
         register = () => {
@@ -898,7 +940,7 @@ class JSBinder
                     if (m) {
                         this.#bindings.push({
                             obj: element,
-                            type: "text",
+                            type: this.#INTERPOLATION_TYPE.TEXT,
                             expressions: [...m].map(trimExpression),
                             text: prepareString(element.textContent.trim()),
                             modified: new JSBinder.#ChangeDetector(),
@@ -921,7 +963,7 @@ class JSBinder
 
                             this.#bindings.push({
                                 obj: element,
-                                type: "attribute",
+                                type: this.#INTERPOLATION_TYPE.ATTRIBUTE,
                                 expressions: [...m].map(trimExpression),
                                 key: attributes[i].name,
                                 text: prepareString(attributes[i].value),
@@ -948,17 +990,17 @@ class JSBinder
                 const result = binding.expressions.reduce((text, expression, index) => text.replace("{"+index+"}", binder.#evaluate(expression)), binding.text) ?? "";
                 switch (binding.type)
                 {
-                    case "text":
+                    case this.#INTERPOLATION_TYPE.TEXT:
                         if (binding.modified.check(result)) {
                             binding.obj.textContent = result;
-                            JSBinder.#dispatchEvent(binding.obj.parentNode, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj.parentNode, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
-                    case "attribute":
+                    case this.#INTERPOLATION_TYPE.ATTRIBUTE:
                         if (binding.modified.check(result)) {
                             binding.obj.setAttribute(binding.key, result);
-                            JSBinder.#dispatchEvent(binding.obj, "attr", { key: binding.key, value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.ATTR, { key: binding.key, value: result });
                         }
                         break;
                 }
@@ -1007,42 +1049,42 @@ class JSBinder
                     case JSBinder.#TYPE.CHECKBOX:
                         if (binding.modified.check(result)) {
                             binding.obj.toggleAttribute("checked", !!result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
                     case JSBinder.#TYPE.SELECT:
                         if (binding.modified.check(result) || binding.obj.value !== (JSBinder.#isNullish(result) ? "" : String(result))) {
                             binding.obj.value = JSBinder.#isNullish(result) ? "" : String(result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
                         
                     case JSBinder.#TYPE.INPUT:
                         if (binding.modified.check(result)) {
                             binding.obj.value = JSBinder.#isNullish(result) ? "" : String(result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
                     case JSBinder.#TYPE.IMG:
                         if (binding.modified.check(result)) {
                             binding.obj.setAttribute("src", JSBinder.#isNullish(result) ? null : result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
                     case JSBinder.#TYPE.IFRAME:
                         if (binding.modified.check(result)) {
                             binding.obj.contentWindow.location.replace(JSBinder.#isNullish(result) ? null : result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
                     default:
                         if (binding.modified.check(result)) {
                             binding.obj.innerHTML = JSBinder.#isNullish(result) ? "" : String(result);
-                            JSBinder.#dispatchEvent(binding.obj, "bind", { value: result });
+                            JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
                 }
@@ -1109,7 +1151,7 @@ class JSBinder
                 const result = binding.expressionTree.evaluate();
                 if (binding.modified.check(result)) {
                     if (JSBinder.#isNullish(result)) { binding.obj.removeAttribute(binding.key); } else { binding.obj.setAttribute(binding.key, result); };
-                    JSBinder.#dispatchEvent(binding.obj, "attr", { key: binding.key, value: result });
+                    JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.ATTR, { key: binding.key, value: result });
                 }
             });
         };
@@ -1157,7 +1199,7 @@ class JSBinder
                 const result = binding.expressionTree.evaluate();
                 if (binding.modified.check(result)) {
                     binding.obj.classList.toggle(binding.key, result);
-                    JSBinder.#dispatchEvent(binding.obj, "class", { key: binding.key, action: result ? "add" : "remove" });
+                    JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.CLASS, { key: binding.key, action: result ? "add" : "remove" });
                 }
             });
         };
@@ -1206,7 +1248,7 @@ class JSBinder
                 const result = binding.expressionTree.evaluate();
                 if (binding.modified.check(result)) {
                     if (JSBinder.#isNullish(result)) { binding.obj.style.removeProperty(binding.key); } else { binding.obj.style.setProperty(binding.key, result); };
-                    JSBinder.#dispatchEvent(binding.obj, "style", { key: binding.key, value: result });
+                    JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.STYLE, { key: binding.key, value: result });
                 }
             });
         };
@@ -1359,7 +1401,7 @@ class JSBinder
                         return JSBinder.#error(`'render' must have 'source' defined`);
 
                     obj.innerHTML = template.replace(this.#RGX_VARIABLE_DATA, source);
-                    JSBinder.#dispatchEvent(obj, "render");
+                    JSBinder.#dispatchEvent(obj, JSBinder.#EVENT.RENDER);
                     counter++;
                 });
             
@@ -1381,7 +1423,7 @@ class JSBinder
         window.queueMicrotask(() => {
             this.#microtaskQueued = false;
              
-            if (this.#stateUpdated)  { this.#stateUpdated = false; JSBinder.#dispatchEvent(this.#settings.root, "stateupdated", {}); }
+            if (this.#stateUpdated)  { this.#stateUpdated = false; JSBinder.#dispatchEvent(this.#settings.root, JSBinder.#EVENT.STATECHANGED); }
             if (this.#needsRegister) { this.#needsRegister = false; this.#register(); }
             if (this.#needsRefresh)  { this.#needsRefresh = false; this.#refresh(); }
         });

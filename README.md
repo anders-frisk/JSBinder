@@ -25,9 +25,10 @@
   - [data-attr - Dynamic attributes](#data-attr)
   - [data-class - Conditional CSS classes](#data-class)
   - [data-style - Dynamic inline styles](#data-style)
+  - [data-template / data-render - Template definitions and rendering](#data-template-and-data-render)
+- [Reversed Directives](#reversed-directives)
   - [data-onclick - Click event handlers](#data-onclick)
   - [data-onchange - Change event handlers](#data-onchange)
-  - [data-template / data-render - Template definitions and rendering](#data-template-and-data-render)
 - [State Management](#state-management)
 - [Expressions](#expressions)
 - [Custom functions](#custom-functions)
@@ -307,10 +308,11 @@ Iterates over arrays with advanced filtering, sorting, and transformation capabi
 
 **Optional Attributes:**
 - `data-where="expression"` - Filter condition
-- `data-skip="expression"` - Number of items to skip
-- `data-limit="expression"` - Maximum number of items
 - `data-orderby="expression"` - Sort by expression
 - `data-distinct="expression"` - Get unique values by expression
+- `data-skip="expression"` - Number of items to skip
+- `data-limit="expression"` - Maximum number of items
+- `data-page="expression"` and `data-pagesize="expression"` - paging support.
 
 **Examples:**
 
@@ -362,8 +364,8 @@ binder.setState({ planets });
 <ul>
   <li data-each="@planet in planets" 
       data-key="@planet.name"
-      data-skip="2"
-      data-limit="3">
+      data-page="2"
+      data-pagesize="3">
     {{@planet.name}}
   </li>
 </ul>
@@ -585,6 +587,130 @@ binder.setState({
 
 ---
 
+### data-template and data-render
+
+Define reusable templates with recursive rendering capabilities.
+
+**Template Definition:**
+```html
+<template data-template="templateName">
+  <!-- Template content with @data variable -->
+</template>
+```
+
+**Template Usage:**
+```html
+<div data-render="templateName" data-source="stateProperty"></div>
+```
+
+**Examples:**
+
+**Simple Template:**
+
+```javascript
+binder.setState({
+  user: {
+    name: "John Doe",
+    email: "john@example.com"
+  }
+});
+```
+
+```html
+<template data-template="userCard">
+  <div class="card">
+    <h3>{{@data.name}}</h3>
+    <p>{{@data.email}}</p>
+  </div>
+</template>
+
+<div data-render="userCard" data-source="user"></div>
+```
+
+**Recursive Tree:**
+
+```javascript
+const treeData = [
+  {
+    title: "Terrestrial Planets",
+    items: [
+      { title: "Mercury", items: [] },
+      { title: "Venus", items: [] },
+      { title: "Earth", items: [
+        { title: "Moon", items: [] }
+      ]},
+      { title: "Mars", items: [] }
+    ]
+  },
+  {
+    title: "Gas Giants",
+    items: [
+      { title: "Jupiter", items: [] },
+      { title: "Saturn", items: [] }
+    ]
+  }
+];
+
+binder.setState({ treeData });
+```
+
+```html
+<template data-template="tree">
+  <li data-each="@item in @data" data-key="@item.title">
+    <span>{{@item.title}}</span>
+    <ul data-if="@item.items.length > 0" 
+        data-render="tree" 
+        data-source="@item.items"></ul>
+  </li>
+</template>
+
+<ul data-render="tree" data-source="treeData"></ul>
+```
+
+**Result:**
+```html
+<ul>
+  <li>
+    <span>Terrestrial Planets</span>
+    <ul>
+      <li><span>Mercury</span></li>
+      <li><span>Venus</span></li>
+      <li>
+        <span>Earth</span>
+        <ul>
+          <li><span>Moon</span></li>
+        </ul>
+      </li>
+      <li><span>Mars</span></li>
+    </ul>
+  </li>
+  <li>
+    <span>Gas Giants</span>
+    <ul>
+      <li><span>Jupiter</span></li>
+      <li><span>Saturn</span></li>
+    </ul>
+  </li>
+</ul>
+```
+
+**Events:** Triggers `jsbinder-render` event
+
+**Notes:**
+- `@data` is a special variable representing the source data
+- Templates can be nested and recursive
+- Templates are defined once and can be rendered multiple times
+- Template scanning happens before rendering
+
+---
+
+## Reversed Directives
+
+The following directives are used to update state in response to user interactions in the most simple way.<br />
+For any more advanced updates, plain JavaScript events and `binder.setState(...)` is recomended.
+
+---
+
 ### data-onclick
 
 Handles click events and updates state directly from HTML.
@@ -755,123 +881,6 @@ binder.setState({
 
 ---
 
-### data-template and data-render`
-
-Define reusable templates with recursive rendering capabilities.
-
-**Template Definition:**
-```html
-<template data-template="templateName">
-  <!-- Template content with @data variable -->
-</template>
-```
-
-**Template Usage:**
-```html
-<div data-render="templateName" data-source="stateProperty"></div>
-```
-
-**Examples:**
-
-**Simple Template:**
-
-```javascript
-binder.setState({
-  user: {
-    name: "John Doe",
-    email: "john@example.com"
-  }
-});
-```
-
-```html
-<template data-template="userCard">
-  <div class="card">
-    <h3>{{@data.name}}</h3>
-    <p>{{@data.email}}</p>
-  </div>
-</template>
-
-<div data-render="userCard" data-source="user"></div>
-```
-
-**Recursive Tree:**
-
-```javascript
-const treeData = [
-  {
-    title: "Terrestrial Planets",
-    items: [
-      { title: "Mercury", items: [] },
-      { title: "Venus", items: [] },
-      { title: "Earth", items: [
-        { title: "Moon", items: [] }
-      ]},
-      { title: "Mars", items: [] }
-    ]
-  },
-  {
-    title: "Gas Giants",
-    items: [
-      { title: "Jupiter", items: [] },
-      { title: "Saturn", items: [] }
-    ]
-  }
-];
-
-binder.setState({ treeData });
-```
-
-```html
-<template data-template="tree">
-  <li data-each="@item in @data" data-key="@item.title">
-    <span>{{@item.title}}</span>
-    <ul data-if="@item.items.length > 0" 
-        data-render="tree" 
-        data-source="@item.items"></ul>
-  </li>
-</template>
-
-<ul data-render="tree" data-source="treeData"></ul>
-```
-
-**Result:**
-```html
-<ul>
-  <li>
-    <span>Terrestrial Planets</span>
-    <ul>
-      <li><span>Mercury</span></li>
-      <li><span>Venus</span></li>
-      <li>
-        <span>Earth</span>
-        <ul>
-          <li><span>Moon</span></li>
-        </ul>
-      </li>
-      <li><span>Mars</span></li>
-    </ul>
-  </li>
-  <li>
-    <span>Gas Giants</span>
-    <ul>
-      <li><span>Jupiter</span></li>
-      <li><span>Saturn</span></li>
-    </ul>
-  </li>
-</ul>
-```
-
-**Events:** Triggers `jsbinder-render` event
-
-**Notes:**
-- `@data` is a special variable representing the source data
-- Templates can be nested and recursive
-- Templates are defined once and can be rendered multiple times
-- Template scanning happens before rendering
-
----
-
 ### State Management
 
 #### `setState(data)`
@@ -915,7 +924,7 @@ binder.setState({ temporaryFlag: undefined });
 - State updates are shallow-merged
 - Setting a property to `undefined` removes it from state
 - Updates are batched and processed in microtasks for performance
-- Triggers `jsbinder-stateupdated` event on root element
+- Triggers `jsbinder-statechanged` event on root element
 
 ---
 
@@ -1045,7 +1054,7 @@ JSBinder dispatches custom events for all directive updates, enabling fine-grain
 
 | Event | Directive | Detail Properties |
 |-------|-----------|-------------------|
-| `jsbinder-stateupdated` | setState() | None |
+| `jsbinder-statechanged` | setState() | None |
 | `jsbinder-bind` | data-bind | `value` |
 | `jsbinder-if` | data-if | `action` ("add" \| "remove") |
 | `jsbinder-for` | data-for | `action` ("add" \| "remove") |
