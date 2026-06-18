@@ -123,6 +123,9 @@ class JSBinder
         sort = (a, b) => JSBinder.#apply(this.#isNumeric(a), this.#isNumeric(b))((aIsNum, bIsNum) => { if (aIsNum && !bIsNum) return 1; if (!aIsNum && bIsNum) return -1; if (aIsNum && bIsNum) return parseFloat(a) - parseFloat(b); return a.toString().localeCompare(b.toString(), undefined, { numeric: true, sensitivity: 'base' }); });
     };
 
+    // `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 15.4 (Mar 2022), Edge 98 (Jan 2022).`
+    static #structuredClonePolyfill = (value) => typeof window.structuredClone !== "undefined" ? window.structuredClone(value) : JSON.parse(JSON.stringify(value));
+
     #indexMap = new Map();
     #state = {};
     #functions = {};
@@ -185,7 +188,7 @@ class JSBinder
      * const state = binder.getState();
      * state.count = 999; // Does not change the actual state
      */
-    getState = () => typeof window.structuredClone !== "undefined" ? window.structuredClone(this.#state) : JSON.parse(JSON.stringify(this.#state)); // Polyfill, `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 15.4 (Mar 2022), Edge 98 (Jan 2022).`
+    getState = () => JSBinder.#structuredClonePolyfill(this.#state);
 
     /**
      * Registers a custom function that can be used in data binding expressions.
@@ -217,7 +220,6 @@ class JSBinder
     // Creates a path from expression. "data[0].title" >> ["data", 0, "title"]
     #createPath = (exp) => {
         const path = exp
-            .replace(/\{([a-zA-Z0-9_]+)\}/g, (_, key) => this.#indexMap.get(key)) // "{index_key}" >> index.
             .replace(/\[(\d+)\]/g, ".$1.") // array[1] >> array.1.
             .replace(/\.+/g, ".") // ".." >> "."
             .replace(/^\./g, "") // ".aa.bb" >> "aa.bb"
@@ -235,6 +237,8 @@ class JSBinder
         if (typeof exp !== "string") return exp; // true / false / null / undefined / numeric... etc.
 
         exp = exp.trim();
+
+        exp = exp.replace(/\$([a-zA-Z0-9_]+)\$/g, (_, key) => this.#indexMap.get(key)) // "{index_key}" >> index.
 
         if (exp.match(/^-?\d+$/)) return parseInt(exp); //int
         if (exp.match(/^-?\d+\.\d+$/)) return parseFloat(exp); //float
@@ -636,7 +640,7 @@ class JSBinder
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
         #index = 0;
 
-        #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
+        #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)(?:\s*,\s*@([a-zA-Z]{1}[0-9a-zA-Z_]*))?\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
 
         // Scans for data-each elements, extracts configuration, and stores template HTML with comment markers.
         register = () => {
@@ -662,7 +666,7 @@ class JSBinder
                     if (!m)
                         return JSBinder.#error(`Incorrect 'each' expression: ${expression}`);
 
-                    const { 1: alias, 2: list } = m;
+                    const { 1: alias, 2: indexAlias, 3: list } = m;
                     this.#bindings.push({
                         itemIndex: this.#index++,
                         html, 
@@ -672,6 +676,7 @@ class JSBinder
                         start, 
                         end, 
                         alias, 
+                        indexAlias,
                         list, 
                         where,
                         orderby,
@@ -699,6 +704,7 @@ class JSBinder
                 const pagesize = binding.pagesizeTree !== null ? binding.pagesizeTree.evaluate() : null;
 
                 const RGX_VARIABLE_ALIAS = JSBinder.#rgxFormatVariable(binding.alias);
+                const RGX_INDEX_ALIAS = !!binding.indexAlias ? JSBinder.#rgxFormatVariable(binding.indexAlias) : null;
 
                 // Create list of all indexes to include, filtered by 'where' if defined.
                 let indexes = JSBinder.#apply(binder.#resolveValue(binding.list))
@@ -727,11 +733,12 @@ class JSBinder
                 // Reduce list of indexes if 'page' and 'pagesize' are defined.
                 if (page !== null && pagesize !== null) indexes = indexes.slice((page - 1) * pagesize, page * pagesize);
 
-                // Calculate keys for each index.
-                const nextKeys = indexes.map((index) => 
-                    JSBinder.#apply(binder.#evaluate(binding.key.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)).toString().replace(/[^a-zA-Z0-9]/g, "_"))
+                // Calculate keys for each index and populate `#indexMap` for current source and render indexes.
+                const nextKeys = indexes.map((sourceIndex, renderIndex) => 
+                    JSBinder.#apply(binder.#evaluate(binding.key.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${sourceIndex}]`)).toString().replace(/[^a-zA-Z0-9]/g, "_"))
                         ((key) => {
-                            binder.#indexMap.set(`${binding.itemIndex}_${key}`, index);
+                            binder.#indexMap.set(`${binding.itemIndex}_${key}__sourceindex`, sourceIndex);
+                            binder.#indexMap.set(`${binding.itemIndex}_${key}__renderindex`, renderIndex);
                             return `${binding.itemIndex}_${key}`;
                         }));
 
@@ -761,7 +768,12 @@ class JSBinder
 
                     if (incomingKeys.includes(key)) {
                         // Add new item.
-                        obj = JSBinder.#deserializeHTML(binding.html.replace(RGX_VARIABLE_ALIAS, `${binding.list}[{${key}}]`));
+
+                        let html = binding.html;
+                        html = html.replace(RGX_VARIABLE_ALIAS, `${binding.list}[$${key}__sourceindex$]`);
+                        if (RGX_INDEX_ALIAS) html = html.replace(RGX_INDEX_ALIAS, `$${key}__renderindex$`);
+
+                        obj = JSBinder.#deserializeHTML(html);
                         lastObj.after(obj);
                         JSBinder.#dispatchEvent(obj, JSBinder.#EVENT.EACH, { action: "add" });
                         counter++;
@@ -912,7 +924,7 @@ class JSBinder
         #bindings = [];
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
 
-        #RGX_INTERPOLATION_DIRECTIVE = /\{\{(.+)\}\}/g;
+        #RGX_INTERPOLATION_DIRECTIVE = /\{\{(.+?)\}\}/g;
 
         #INTERPOLATION_TYPE = {
             TEXT: "text",
@@ -1276,21 +1288,22 @@ class JSBinder
         register = () => {
             binder.#queryDirectives("[data-onclick]")
                 ((obj) => {
+                    const mappings = [];
+
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("onclick")).forEach((mapping) => {
                         const m = mapping.match(this.#RGX_ONCLICK_DIRECTIVE);
-
                         if (!m)
                             return JSBinder.#error(`Incorrect 'onclick' syntax: ${mapping}`);
 
                         const { 1: target, 2: expression} = m;
-
-                        const applyChange = () => {
-                            const evaluated = binder.#evaluate(expression);
-                            binder.#mutateState(target, evaluated);
-                        };
-
-                        binder.#addEvent(obj)("click", (e) => applyChange());
+                        mappings.push({ target, expression });
                     });
+
+                    const applyChange = () =>
+                        mappings.forEach(({ target, expression }) => 
+                            binder.#mutateState(target, binder.#evaluate(expression)));
+
+                    binder.#addEvent(obj)("click", (e) => applyChange());
                 });
         };
     })(this);
@@ -1310,6 +1323,8 @@ class JSBinder
         register = () => {
             binder.#queryDirectives("[data-onchange]")
                 ((obj) => {
+                    const mappings = [];
+
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("onchange")).forEach((mapping) => {
                         const m = mapping.match(this.#RGX_ONCHANGE_DIRECTIVE);
 
@@ -1317,34 +1332,35 @@ class JSBinder
                             return JSBinder.#error(`Incorrect 'onchange' syntax: ${mapping}`);
 
                         const { 1: target, 2: expression} = m;
-
-                        const applyChange = (value) => {
-                            const evaluated = binder.#evaluate(expression.replace(this.#RGX_VARIABLE_VALUE, value));
-                            binder.#mutateState(target, evaluated);
-                        };
-
-                        switch (JSBinder.#typeOf(obj))
-                        {
-                            case JSBinder.#TYPE.CHECKBOX:
-                                binder.#addEvent(obj)("change", (e) => applyChange(!!obj.checked));
-                                break;
-
-                            case JSBinder.#TYPE.SELECT:
-                                binder.#addEvent(obj)("change", (e) => applyChange(this.#toSafeString(obj.value)));
-                                break;
-
-                            case JSBinder.#TYPE.INPUT:
-                                binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
-                                break;
-
-                            case JSBinder.#TYPE.TEXTAREA:
-                                binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
-                                break;
-
-                            default:
-                                return JSBinder.#error(`'onchange' directive is currently only supported for <select> and <input>`);
-                        }
+                        mappings.push({ target, expression });
                     });
+                    
+                    const applyChange = (value) => 
+                        mappings.forEach(({ target, expression }) =>
+                            binder.#mutateState(target, binder.#evaluate(expression.replace(this.#RGX_VARIABLE_VALUE, value))));
+
+
+                    switch (JSBinder.#typeOf(obj))
+                    {
+                        case JSBinder.#TYPE.CHECKBOX:
+                            binder.#addEvent(obj)("change", (e) => applyChange(!!obj.checked));
+                            break;
+
+                        case JSBinder.#TYPE.SELECT:
+                            binder.#addEvent(obj)("change", (e) => applyChange(this.#toSafeString(obj.value)));
+                            break;
+
+                        case JSBinder.#TYPE.INPUT:
+                            binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
+                            break;
+
+                        case JSBinder.#TYPE.TEXTAREA:
+                            binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
+                            break;
+
+                        default:
+                            return JSBinder.#error(`'onchange' directive is currently only supported for <select> and <input>`);
+                    }
                 });
         };
     })(this);

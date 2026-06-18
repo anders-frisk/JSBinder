@@ -1291,8 +1291,8 @@ binder.scan();
 
 JSBinder supports all modern browsers with ES6+ capabilities:
 
-| Browser | Minimum Version | Recomended Version (no polyfills) |
-|---------|-----------------|-----------------------------------|
+| Browser | Minimum Version | Recomended Minimum Version (no polyfills) |
+|---------|-----------------|-------------------------------------------|
 | Chrome  | 88 (Jan 2021)   | 98 (Jan 2022) |
 | Firefox | 90 (Jul 2021)   | 94 (Nov 2021) |
 | Safari  | 15.0 (Sep 2021) | 15.4 (Mar 2022) |
