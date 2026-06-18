@@ -627,6 +627,7 @@ class JSBinder
     // Each
     //
     // data-each="@item in items" data-key="@item..." [data-where="..."] [data-skip="..."] [data-limit="..."] [data-page="..." data-pagesize="..."] [data-orderby="..."] [data-distinct="..."]
+    // data-each="@item, @index in items"
     //
     // { items: ["a", "b", ...] }      >> <p data-each="@item in items" data-key="@item">{{@item}}</p>                                          >> <p>a</p><p>b</p>...
     // { items: [{title: "a"}, ...] }  >> <p data-each="@item in items" data-key="@item.title">{{@item.title}}</p>                              >> <p>a</p>...

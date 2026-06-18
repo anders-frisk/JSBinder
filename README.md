@@ -305,6 +305,9 @@ Iterates over arrays with advanced filtering, sorting, and transformation capabi
 - `data-each="@variable in source"` - Iteration specification
 - `data-key="expression"` - Unique key for each item (for efficient updates)
 
+**Variations:**
+- `data-each="@variable, @index in source"` - Iteratrion with extra index vaiable (valid in any sub directives).
+
 **Optional Attributes:**
 - `data-where="expression"` - Filter condition
 - `data-orderby="expression"` - Sort by expression
@@ -388,14 +391,21 @@ binder.setState({ planets });
      data-orderby="@planet.diameter">
   {{@planet.name}}
 </div>
+<!-- Result: Venus, Earth, ... -->
+
+<!-- Iteration with index -->
+ <div data-each="@planet, @index in planets"
+     data-key="@planet.name">
+  {{@index+1}}: {{@planet.name}}
+</div>
+<!-- Result: '1: Sun', '2: Mercury', ... -->
 ```
 
 **Events:** Triggers `jsbinder-each` event with `e.detail.action = "add" | "remove"`
 
 **Notes:**
 - `data-key` is required and enables efficient DOM updates
-- Multiple modifiers can be combined in any order
-- Evaluation order: where → orderby → distinct → skip → limit
+- Multiple modifiers can be combined with evaluation order: where → orderby → distinct → skip → limit
 
 ---
 
