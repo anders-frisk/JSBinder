@@ -81,18 +81,27 @@ class JSBinder
     static #info = (msg) => console.info(JSBinder.#message(msg));
     static #warn = (msg) => console.warn(JSBinder.#message(msg));
 
+    // Returns first element if array has one element, otherwise returns the array itself.
+    // ["aa"] >> "aa", ["aa", "bb", ...] >> ["aa", "bb", ...]
     static #unwrapSingleArray = (x) => (Array.isArray(x) && x.length === 1) ? x[0] : x;
 
     static #isPlainObject = (obj) => obj !== null && typeof obj === 'object' && !Array.isArray(obj);
-    static #isNullish = (x) => [undefined, null, ""].includes(x);
+    static #isNullish = (x) => x === undefined || x === null || x === "";
 
     // Removes and returnes one or more dataset attributes from a DOM element as list or single.
     static #consumeDataset = (obj) => (...keys) => JSBinder.#unwrapSingleArray(keys.map(key => { const data = obj.dataset[key]?.trim().replace(/\s\s+/g, " ") ?? null; obj.removeAttribute(`data-${key}`); return data; }));
-    static #split = (input) => input.split(";").map(x => x.trim()).filter(x => x !== ""); // Improvement: Do not split inside any strings. 
+
+    // Splits a string by semicolons, ignoring semicolons inside quotes or escaped characters.
+    static #split = (input) => 
+        input
+            .split(/;(?=(?:[^"'\\]|\\.|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')*$)/)
+            .map(x => x.trim())
+            .filter(x => x !== "");
 
     // Clean HTML string from comments etc.
     static #cleanHTML = (html) => 
-        html.trim()
+        html
+            .trim()
             .replace(/<!--[\s\S]*?-->/g, "")
             .replace(/\s\s+/g, " ")
             .replace(/>\s+</g, "><");
@@ -271,11 +280,11 @@ class JSBinder
 
      // Expression solver - Parses and evaluates JavaScript-like expressions in bindings.
      // Handles operators, functions, ternary expressions, and respects operator precedence.
-    static #Solver = class {
+    static #Solver = class Solver {
         static #OPERATORS = new Set(["?", ":", "(", ")", "!!", "!", "~", "<<", ">>", ">>>", "**", "*", "/", "%", "+", "-", ">=", ">", "<=", "<", "===", "==", "!==", "!=", "&", "^", "|", "&&", "||", "??"]);
 
         static #isFunction = (x) => typeof x === "string" && !!x.match(/^#[a-zA-Z]{1}[0-9a-zA-Z_]*$/);
-        static #isOperator = (x) => typeof x === "string" && JSBinder.#Solver.#OPERATORS.has(x);
+        static #isOperator = (x) => typeof x === "string" && Solver.#OPERATORS.has(x);
 
         // Tokenizer - Handles string parsing and token extraction.
         static #Tokenizer = class {
@@ -323,7 +332,7 @@ class JSBinder
         };
 
         // TreeBuilder - Constructs the AST from tokens.
-        static #TreeBuilder = class {
+        static #TreeBuilder = class TreeBuilder {
             #parts;
             #pos = 0;
 
@@ -346,7 +355,7 @@ class JSBinder
 
                 // (right to left) (..., operator) "-", "5", ... >> (..., operator) ["-", "5"], ...
                 for (let x = output.length - 2; x >= 0; x--)
-                    if (["-", "+"].includes(output[x]) && (x === 0 || JSBinder.#Solver.#isOperator(output[x-1])))
+                    if (["-", "+"].includes(output[x]) && (x === 0 || Solver.#isOperator(output[x-1])))
                         output.splice(x, 2, [output[x], output[x+1]]);
 
                 // (right to left) ..., prefix_operator, operand, ... >> ..., [prefix_operator, operand], ...
@@ -381,7 +390,7 @@ class JSBinder
         };
 
         // TreeEvaluator - Evaluates the constructed AST.
-        static #Evaluator = class {
+        static #Evaluator = class Evaluator {
             #binderReference;
 
             constructor(binderInstance)
@@ -453,21 +462,21 @@ class JSBinder
 
                 // [#round, 5.5] >> [6]
                 const handleFunctions = (data) =>
-                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, Object.entries(binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
+                    Evaluator.#evaluatePrefixOperations(data, Object.entries(binder.#functions)); //Object.entries(...) >> [["#round", (x) => Math.round(x)], ...]
 
                 // ["!", true] >> [false]
                 const handlePrefixOperations = (data) => 
-                    JSBinder.#Solver.#Evaluator.#evaluatePrefixOperations(data, JSBinder.#Solver.#Evaluator.#prefixOperations);
+                    Evaluator.#evaluatePrefixOperations(data, Evaluator.#prefixOperations);
 
                 // [1, "+", 2] >> [3]
                 const handleInfixOperations = (data) =>
-                    JSBinder.#Solver.#Evaluator.#evaluateInfixOperations(data, JSBinder.#Solver.#Evaluator.#infixOperations);
+                    Evaluator.#evaluateInfixOperations(data, Evaluator.#infixOperations);
 
                 // Recursive parse tree nodes to values.
                 // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
                 const resolveLiterals = (input) => input
                     .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
-                    .map((x) => !Array.isArray(x) && !JSBinder.#Solver.#isFunction(x) && !JSBinder.#Solver.#isOperator(x) ? binder.#resolveValue(x) : x);
+                    .map((x) => !Array.isArray(x) && !Solver.#isFunction(x) && !Solver.#isOperator(x) ? binder.#resolveValue(x) : x);
 
                 // Recursive solve tree.
                 const evaluateTree = (input) => JSBinder.#pipe(handleTernary, handleFunctions, handlePrefixOperations, handleInfixOperations, JSBinder.#unwrapSingleArray)(input.map((x) => Array.isArray(x) ? evaluateTree(x) : x));
@@ -477,33 +486,35 @@ class JSBinder
         };
 
         // Main ExpressionTree class - Coordinates the parsing and evaluation.
-        static ExpressionTree = class {
+        static ExpressionTree = class ExpressionTree {
             #tree;
             #evaluator;
 
+            static #RGX_TOKENS = /(>>>|===|!==|!!|<<|>>|\*\*|>=|<=|==|!=|&&|\|\||\?\?|\?|:|\(|\)|!|~|\*|\/|%|\+|-|>|<|&|\^|\|)/g
+
             constructor (binder, exp)
             {
-                this.#tree = this.#buildTree(exp);
-                this.#evaluator = new JSBinder.#Solver.#Evaluator(binder);
+                this.#tree = ExpressionTree.#buildTree(exp);
+                this.#evaluator = new Solver.#Evaluator(binder);
             };
 
-            #buildTree = (exp) => {
-                const tokenizer = new JSBinder.#Solver.#Tokenizer();
+            static #buildTree = (exp) => {
+                const tokenizer = new Solver.#Tokenizer();
 
                 exp = tokenizer.extractStrings(exp);
                 exp = tokenizer.extractExpressions(exp);
-
+                
                 // Split expression
                 // "5+3-x" >> "5 + 3 - x" >> ["5", "+", "3", "-", "x"]
                 let parts = exp
-                    .replace(/(>>>|===|!==|!!|<<|>>|\*\*|>=|<=|==|!=|&&|\|\||\?\?|\?|:|\(|\)|!|~|\*|\/|%|\+|-|>|<|&|\^|\|)/g, " $1 ")
+                    .replace(ExpressionTree.#RGX_TOKENS, " $1 ")
                     .trim()
                     .split(/\s+/);
 
                 parts = tokenizer.restoreExpressions(parts);
                 parts = tokenizer.restoreStrings(parts);
 
-                return new JSBinder.#Solver.#TreeBuilder(parts).build();
+                return (new Solver.#TreeBuilder(parts)).build();
             };
 
             // Recursive evaluation of expression tree.
@@ -579,8 +590,9 @@ class JSBinder
     // data.visible = false >> <div data-if="data.visible === true">...</div> >> <!-- if -->
     //
     // event: jsbinder-if with e.detail.action = "add" / "remove".
-    #ifDirective = ((binder) => new class {
+    #ifDirective = ((binder) => new class IfDirective {
         #bindings = [];
+
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
 
         // Finds and stores data-if elements, replacing them with comment placeholders.
@@ -636,12 +648,13 @@ class JSBinder
     // { numbers: [1,2,3,4,5, ...] }   >> <p data-each="@number in numbers" data-key="@number" data-page="2" data-pagesize="5">{{@number}}</p>  >> <p>6</p>...<p>10</p>
     //
     // event: jsbinder-each with e.detail.action = "add" / "remove".
-    #eachDirective = ((binder) => new class {
+    #eachDirective = ((binder) => new class EachDirective {
         #bindings = [];
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
         #index = 0;
-
-        #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)(?:\s*,\s*@([a-zA-Z]{1}[0-9a-zA-Z_]*))?\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
+        
+        static #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)(?:\s*,\s*@([a-zA-Z]{1}[0-9a-zA-Z_]*))?\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
+        
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
 
         // Scans for data-each elements, extracts configuration, and stores template HTML with comment markers.
         register = () => {
@@ -662,7 +675,7 @@ class JSBinder
                     if (pagesize !== null && page === null || page !== null && pagesize === null)
                         return JSBinder.#error("'page' and 'pagesize' must be used together");
 
-                    const m = expression.match(this.#RGX_EACH_DIRECTIVE);
+                    const m = expression.match(EachDirective.#RGX_EACH_DIRECTIVE);
 
                     if (!m)
                         return JSBinder.#error(`Incorrect 'each' expression: ${expression}`);
@@ -810,11 +823,12 @@ class JSBinder
     // <p data-for="@number" data-from="1" data-to="7" data-where="@number % 2 === 0">{{@number}}</p>   >> <p>2</p><p>4</p><p>6</p>
     //
     // event: jsbinder-for with e.detail.action = "add" / "remove".
-    #forDirective = ((binder) => new class {
+    #forDirective = ((binder) => new class ForDirective {
         #bindings = [];
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
+        
+        static #RGX_FOR_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)$/;
 
-        #RGX_FOR_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)$/;
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
 
         // Finds data-for elements with range specifications and stores template HTML with comment markers.
         register = () => {
@@ -829,7 +843,7 @@ class JSBinder
                     if (from === null || to === null)
                         return JSBinder.#error("'for' must have 'from' and 'to' expressions defined");
 
-                    const m = expression.match(this.#RGX_FOR_DIRECTIVE);
+                    const m = expression.match(ForDirective.#RGX_FOR_DIRECTIVE);
 
                     if (!m)
                         return JSBinder.#error(`Incorrect 'for' expression: ${expression}`);
@@ -921,16 +935,19 @@ class JSBinder
     //
     // event: jsbinder-attr with e.detail.key = attribute key and e.detail.value = value.
     //        jsbinder-bind with e.detail.value = value. (e.target = parentNode)
-    #interpolationDirective = ((binder) => new class {
+    #interpolationDirective = ((binder) => new class InterpolationDirective {
         #bindings = [];
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
-
-        #RGX_INTERPOLATION_DIRECTIVE = /\{\{(.+?)\}\}/g;
-
-        #INTERPOLATION_TYPE = {
+        
+        static #RGX_INTERPOLATION = /\{\{(.+?)\}\}/g;
+        static #RGX_START = /^\{\{/;
+        static #RGX_END = /\}\}$/;
+        
+        static #INTERPOLATION_TYPE = {
             TEXT: "text",
             ATTRIBUTE: "attribute",
         };
+        
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
 
         // Scans text content and attributes for {{...}} expressions, extracting and storing them.
         register = () => {
@@ -939,22 +956,22 @@ class JSBinder
             let counter = 0;
 
             // "aa {{bb}} cc {{dd}} ee" >> "aa {0} cc {1} ee"
-            const prepareString = (input) => input.replace(this.#RGX_INTERPOLATION_DIRECTIVE, (() => { let index = 0; return () => `{${index++}}`; })());
+            const prepareString = (input) => input.replace(InterpolationDirective.#RGX_INTERPOLATION, (() => { let index = 0; return () => `{${index++}}`; })());
 
             // "{{aa}}" >> "aa"
-            const trimExpression = (x) => x.replace(/^\{\{/, "").replace(/\}\}$/, "").trim();
+            const trimExpression = (x) => x.replace(InterpolationDirective.#RGX_START, "").replace(InterpolationDirective.#RGX_END, "").trim();
 
             const scanNode = (element) => {
 
                 // Find all interolations in innerHTML.
                 // Ex: <h1>{{page.title}}</h1>
                 if (element.nodeType === Node.TEXT_NODE) {
-                    const m = element.textContent.match(this.#RGX_INTERPOLATION_DIRECTIVE);
+                    const m = element.textContent.match(InterpolationDirective.#RGX_INTERPOLATION);
 
                     if (m) {
                         this.#bindings.push({
                             obj: element,
-                            type: this.#INTERPOLATION_TYPE.TEXT,
+                            type: InterpolationDirective.#INTERPOLATION_TYPE.TEXT,
                             expressions: [...m].map(trimExpression),
                             text: prepareString(element.textContent.trim()),
                             modified: new JSBinder.#ChangeDetector(),
@@ -969,7 +986,7 @@ class JSBinder
                 if (element.nodeType === Node.ELEMENT_NODE) {
                     const attributes = element.attributes;
                     for (let i = 0; i < attributes.length; i++) {
-                        const m = attributes[i].value.match(this.#RGX_INTERPOLATION_DIRECTIVE);
+                        const m = attributes[i].value.match(InterpolationDirective.#RGX_INTERPOLATION);
 
                         if (m) {
                             if (([JSBinder.#TYPE.SELECT, JSBinder.#TYPE.INPUT, JSBinder.#TYPE.TEXTAREA].includes(JSBinder.#typeOf(element))) && attributes[i].name.toLowerCase() === "value")
@@ -977,7 +994,7 @@ class JSBinder
 
                             this.#bindings.push({
                                 obj: element,
-                                type: this.#INTERPOLATION_TYPE.ATTRIBUTE,
+                                type: InterpolationDirective.#INTERPOLATION_TYPE.ATTRIBUTE,
                                 expressions: [...m].map(trimExpression),
                                 key: attributes[i].name,
                                 text: prepareString(attributes[i].value),
@@ -1004,14 +1021,14 @@ class JSBinder
                 const result = binding.expressions.reduce((text, expression, index) => text.replace("{"+index+"}", binder.#evaluate(expression)), binding.text) ?? "";
                 switch (binding.type)
                 {
-                    case this.#INTERPOLATION_TYPE.TEXT:
+                    case InterpolationDirective.#INTERPOLATION_TYPE.TEXT:
                         if (binding.modified.check(result)) {
                             binding.obj.textContent = result;
                             JSBinder.#dispatchEvent(binding.obj.parentNode, JSBinder.#EVENT.BIND, { value: result });
                         }
                         break;
 
-                    case this.#INTERPOLATION_TYPE.ATTRIBUTE:
+                    case InterpolationDirective.#INTERPOLATION_TYPE.ATTRIBUTE:
                         if (binding.modified.check(result)) {
                             binding.obj.setAttribute(binding.key, result);
                             JSBinder.#dispatchEvent(binding.obj, JSBinder.#EVENT.ATTR, { key: binding.key, value: result });
@@ -1031,11 +1048,12 @@ class JSBinder
     // <input/select data-bind="..." /> >> <input/select value="..." />
     //
     // event: jsbinder-bind with e.detail.value = value.
-    #bindDirective = ((binder) => new class {
+    #bindDirective = ((binder) => new class BindDirective {
         #bindings = [];
+        
+        static #getDomDepth = (node) => Array.from(function* (n) { while (n.parentElement) yield (n = n.parentElement); }(node)).length;
+        
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
-
-        #getDomDepth = (node) => Array.from(function* (n) { while (n.parentElement) yield (n = n.parentElement); }(node)).length;
 
         // Finds data-bind elements and stores their expressions with DOM depth for proper evaluation order.
         register = () => {
@@ -1049,7 +1067,7 @@ class JSBinder
                         obj, 
                         expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression),
                         modified: new JSBinder.#ChangeDetector(), 
-                        depth: this.#getDomDepth(obj),
+                        depth: BindDirective.#getDomDepth(obj),
                     });
                 });
         };
@@ -1120,11 +1138,12 @@ class JSBinder
     // data-disabled="valid !== true"
     //
     // event: jsbinder-attr with e.detail.key = attribute key and e.detail.value = value.
-    #attributeDirective = ((binder) => new class {
+    #attributeDirective = ((binder) => new class AttributeDirective {
         #bindings = [];
+        
+        static #RGX_ATTRIBUTE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
+        
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
-
-        #RGX_ATTRIBUTE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
         // Scans for data-attr directives, parsing attribute:expression mappings.
         register = () => {
@@ -1133,7 +1152,7 @@ class JSBinder
             binder.#queryDirectives("[data-attr]")
                 ((obj) => {
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("attr")).forEach((mapping) => {
-                        const m = mapping.match(this.#RGX_ATTRIBUTE_DIRECTIVE);
+                        const m = mapping.match(AttributeDirective.#RGX_ATTRIBUTE_DIRECTIVE);
 
                         if (!m)
                             return JSBinder.#error(`Incorrect 'attribute' syntax: ${mapping}`);
@@ -1185,11 +1204,12 @@ class JSBinder
     // data-class="'disabled" : data.enabled !== true || data.expired === true"
     //
     // event: jsbinder-class with e.detail.key = class name.
-    #classDirective = ((binder) => new class {
+    #classDirective = ((binder) => new class ClassDirective {
         #bindings = [];
+        
+        static #RGX_CLASS_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
+        
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
-
-        #RGX_CLASS_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
         // Finds data-class directives and parses class:expression mappings.
         register = () => {
@@ -1198,7 +1218,7 @@ class JSBinder
             binder.#queryDirectives("[data-class]")
                 ((obj) => {
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("class")).forEach((mapping) => {
-                        const m = mapping.match(this.#RGX_CLASS_DIRECTIVE);
+                        const m = mapping.match(ClassDirective.#RGX_CLASS_DIRECTIVE);
 
                         if (!m)
                             return JSBinder.#error(`Incorrect 'class' syntax: ${mapping}`);
@@ -1232,13 +1252,14 @@ class JSBinder
     // data-style="'left' : data.x; 'top" : data.y"
     //
     // event: jsbinder-style with e.detail.key = css property.
-    #styleDirective = ((binder) => new class {
+    #styleDirective = ((binder) => new class StyleDirective {
         #bindings = [];
+        
+        static #RGX_STYLE_DIRECTIVE = /^(['"])((?:--)?[a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
+        
+        static #toKebabCase = (text) => text.trim().replace(/([a-z])([A-Z])/g, (_, a, b) => `${a}-${b.toLowerCase()}`); // "marginTop" >> "margin-top"
+
         #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
-
-        #toKebabCase = (text) => text.trim().replace(/([a-z])([A-Z])/g, (_, a, b) => `${a}-${b.toLowerCase()}`); // "marginTop" >> "margin-top"
-
-        #RGX_STYLE_DIRECTIVE = /^(['"])((?:--)?[a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
 
         // Scans for data-style directives, parsing CSS property:expression mappings.
         register = () => {
@@ -1247,7 +1268,7 @@ class JSBinder
             binder.#queryDirectives("[data-style]")
                 ((obj) => {
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("style")).forEach((mapping) => {
-                        const m = mapping.match(this.#RGX_STYLE_DIRECTIVE);
+                        const m = mapping.match(StyleDirective.#RGX_STYLE_DIRECTIVE);
 
                         if (!m)
                             return JSBinder.#error(`Incorrect 'style' syntax: ${mapping}`);
@@ -1255,7 +1276,7 @@ class JSBinder
                         const { 2: key, 3: expression } = m;
                         this.#bindings.push({
                             obj, 
-                            key: this.#toKebabCase(key),
+                            key: StyleDirective.#toKebabCase(key),
                             expressionTree: new JSBinder.#Solver.ExpressionTree(binder, expression), 
                             modified: new JSBinder.#ChangeDetector(),
                         });
@@ -1281,9 +1302,9 @@ class JSBinder
     //
     // <button data-onclick="page = 0">First page</button>
     // data-onclick="path1 = expression1; path2 = expression2"
-    #onClickDirective = ((binder) => new class {
+    #onClickDirective = ((binder) => new class OnClickDirective {
 
-        #RGX_ONCLICK_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
+        static #RGX_ONCLICK_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
 
         // Attaches click event listeners that mutate state based on target:expression mappings.
         register = () => {
@@ -1292,7 +1313,7 @@ class JSBinder
                     const mappings = [];
 
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("onclick")).forEach((mapping) => {
-                        const m = mapping.match(this.#RGX_ONCLICK_DIRECTIVE);
+                        const m = mapping.match(OnClickDirective.#RGX_ONCLICK_DIRECTIVE);
                         if (!m)
                             return JSBinder.#error(`Incorrect 'onclick' syntax: ${mapping}`);
 
@@ -1313,12 +1334,12 @@ class JSBinder
     // 
     // <input type="text" data-onchange="name = @value" data-bind="name" />
     // data-onchange="path1 = expression1; path2 = expression2"
-    #onChangeDirective = ((binder) => new class {
+    #onChangeDirective = ((binder) => new class OnChangeDirective {
 
-        #toSafeString = (input) => JSON.stringify(input); //"'" + input.replace(/\'/g, `' + "'" + '`) + "'";
+        static #toSafeString = (input) => JSON.stringify(input); //"'" + input.replace(/\'/g, `' + "'" + '`) + "'";
 
-        #RGX_ONCHANGE_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
-        #RGX_VARIABLE_VALUE = JSBinder.#rgxFormatVariable("value");
+        static #RGX_ONCHANGE_DIRECTIVE = /^([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)\s+=\s+(.+)$/;
+        static #RGX_VARIABLE_VALUE = JSBinder.#rgxFormatVariable("value");
 
         // Attaches input/change event listeners that mutate state using form values in expressions.
         register = () => {
@@ -1327,7 +1348,7 @@ class JSBinder
                     const mappings = [];
 
                     JSBinder.#split(JSBinder.#consumeDataset(obj)("onchange")).forEach((mapping) => {
-                        const m = mapping.match(this.#RGX_ONCHANGE_DIRECTIVE);
+                        const m = mapping.match(OnChangeDirective.#RGX_ONCHANGE_DIRECTIVE);
 
                         if (!m)
                             return JSBinder.#error(`Incorrect 'onchange' syntax: ${mapping}`);
@@ -1338,7 +1359,7 @@ class JSBinder
                     
                     const applyChange = (value) => 
                         mappings.forEach(({ target, expression }) =>
-                            binder.#mutateState(target, binder.#evaluate(expression.replace(this.#RGX_VARIABLE_VALUE, value))));
+                            binder.#mutateState(target, binder.#evaluate(expression.replace(OnChangeDirective.#RGX_VARIABLE_VALUE, value))));
 
 
                     switch (JSBinder.#typeOf(obj))
@@ -1348,15 +1369,15 @@ class JSBinder
                             break;
 
                         case JSBinder.#TYPE.SELECT:
-                            binder.#addEvent(obj)("change", (e) => applyChange(this.#toSafeString(obj.value)));
+                            binder.#addEvent(obj)("change", (e) => applyChange(OnChangeDirective.#toSafeString(obj.value)));
                             break;
 
                         case JSBinder.#TYPE.INPUT:
-                            binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
+                            binder.#addEvent(obj)("input", (e) => applyChange(OnChangeDirective.#toSafeString(obj.value)));
                             break;
 
                         case JSBinder.#TYPE.TEXTAREA:
-                            binder.#addEvent(obj)("input", (e) => applyChange(this.#toSafeString(obj.value)));
+                            binder.#addEvent(obj)("input", (e) => applyChange(OnChangeDirective.#toSafeString(obj.value)));
                             break;
 
                         default:
@@ -1384,11 +1405,11 @@ class JSBinder
     // <ul data-render="tree" data-source="treeData"></ul>
     //
     // event: jsbinder-render.
-    #templateDirective = ((binder) => new class {
+    #templateDirective = ((binder) => new class TemplateDirective {
         #templates = {};
         
-        #RGX_TEMPLATE_DIRECTIVE = /^[a-zA-Z]{1}[0-9a-zA-Z_]*$/;
-        #RGX_VARIABLE_DATA = JSBinder.#rgxFormatVariable("data");
+        static #RGX_TEMPLATE_DIRECTIVE = /^[a-zA-Z]{1}[0-9a-zA-Z_]*$/;
+        static #RGX_VARIABLE_DATA = JSBinder.#rgxFormatVariable("data");
 
         // Find all <template data-template='templatekey' /> to be used from elements with data-render='templatekey'.
         register = () => {
@@ -1397,7 +1418,7 @@ class JSBinder
                     const key = JSBinder.#consumeDataset(obj)("template");
                     const html = JSBinder.#cleanHTML(obj.innerHTML);
                     
-                    if (!key.match(this.#RGX_TEMPLATE_DIRECTIVE))
+                    if (!key.match(TemplateDirective.#RGX_TEMPLATE_DIRECTIVE))
                         return JSBinder.#error(`'template' parameter 'key' must be a correct variable name`);
                     
                     obj.remove();
@@ -1425,7 +1446,7 @@ class JSBinder
                     if (!source)
                         return JSBinder.#error(`'render' must have 'source' defined`);
 
-                    obj.innerHTML = template.replace(this.#RGX_VARIABLE_DATA, source);
+                    obj.innerHTML = template.replace(TemplateDirective.#RGX_VARIABLE_DATA, source);
                     JSBinder.#dispatchEvent(obj, JSBinder.#EVENT.RENDER);
                     counter++;
                 });
