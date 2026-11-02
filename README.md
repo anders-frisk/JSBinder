@@ -119,7 +119,7 @@ Creates a binding between state and DOM elements. The behavior depends on the el
 | `<input>`, `<select>`, `<textarea>` | `value` property | String |
 | `<input type="checkbox">` | `checked` property | Boolean |
 | `<img>`, `<iframe>` | `src` attribute | String |
-| Other elements | `innerHTML` | Any (converted to string) |
+| Other elements | `textContent` | Any (converted to string) |
 
 **Examples:**
 
