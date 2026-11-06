@@ -135,7 +135,10 @@ class JSBinder
     // `structuredClone` available from Chrome 98 (Jan 2022), Firefox 94 (Nov 2021), Safari 15.4 (Mar 2022), Edge 98 (Jan 2022).`
     static #structuredClonePolyfill = (value) => typeof window.structuredClone !== "undefined" ? window.structuredClone(value) : JSON.parse(JSON.stringify(value));
 
-    static BLOCKED_KEYS = ['constructor', 'prototype', '__proto__'];
+    // Returns the difference between two arrays as sets of outgoing and incoming elements.
+    static #diff = (a, b) => { const setA = new Set(a); const setB = new Set(b); return { outgoing: new Set(a.filter(x => !setB.has(x))), incoming: new Set(b.filter(x => !setA.has(x))) }; };
+
+    static #BLOCKED_KEYS = ['constructor', 'prototype', '__proto__'];
 
     #indexMap = new Map();
     #state = {};
@@ -175,7 +178,7 @@ class JSBinder
 
         const recurse = (state, updates) => {
             Object.keys(updates)
-                .filter(key => !JSBinder.BLOCKED_KEYS.includes(key))
+                .filter(key => !JSBinder.#BLOCKED_KEYS.includes(key))
                 .forEach((key) => { if (updates[key] === undefined) { delete state[key]; } else { state[key] = JSBinder.#isPlainObject(updates[key]) ? recurse(state[key] || {}, updates[key]) : updates[key]; } });
             return state;
         };
@@ -241,7 +244,7 @@ class JSBinder
             .replace(/\.$/g, "") // "aa.bb." >> "aa.bb"
             .split(".");
 
-        if (path.some(x => JSBinder.BLOCKED_KEYS.includes(x)))
+        if (path.some(x => JSBinder.#BLOCKED_KEYS.includes(x)))
             throw new Error(JSBinder.#message("Path includes forbidden keywords"));
 
         return path;
@@ -732,9 +735,6 @@ class JSBinder
 
         // Evaluates list expressions, filters/sorts items, and updates DOM by adding/removing/reordering elements.
         refresh = () => {
-            const whereNotIn = (other) => (x) => !other.includes(x);
-            const whereNotNull = (x) => x !== null;
-
             let counter = 0;
 
             this.#bindings.forEach((binding) => {
@@ -763,8 +763,8 @@ class JSBinder
 
                 // Filter on distinct values if 'distinct' is defined.
                 if (binding.distinct !== null) {
-                    const distinctIndexes = [...new Map(indexes.map((index) => [binder.#evaluate(binding.distinct.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)), index]).reverse()).values()];
-                    indexes = indexes.filter((index) => distinctIndexes.includes(index));
+                    const distinctIndexes = new Set([...new Map(indexes.map((index) => [binder.#evaluate(binding.distinct.replace(RGX_VARIABLE_ALIAS, `${binding.list}[${index}]`)), index]).reverse()).values()]);
+                    indexes = indexes.filter((index) => distinctIndexes.has(index));
                 }
 
                 // Reduce list of indexes if 'skip' or 'limit' is defined.
@@ -783,31 +783,26 @@ class JSBinder
                             return `${binding.itemIndex}_${key}`;
                         }));
 
-                // Compare keys to know what to add or remove.
-                const outgoingKeys = binding.keys.filter(whereNotIn(nextKeys));
-                const incomingKeys = nextKeys.filter(whereNotIn(binding.keys));
+                const { outgoing, incoming } = JSBinder.#diff(binding.keys, nextKeys);
 
                 // Remove existing items.
                 binding.keys.forEach((key, i) => {
-                    if (outgoingKeys.includes(key)) {
+                    if (outgoing.has(key)) {
                         JSBinder.#dispatchEvent(binding.objs[i], JSBinder.#EVENT.EACH, { action: JSBinder.#ACTION.REMOVE }); // Dispatch before removing the element.
                         binding.objs[i].remove();
                         binding.objs[i] = null;
-                        binding.keys[i] = null;
                     }
                 });
 
-                // Filtered lists to not include removed elements.
-                let existingKeys = binding.keys.filter(whereNotNull);
-                let existingObjs = binding.objs.filter(whereNotNull);
+                const existingObjMap = new Map(binding.keys.map((key, i) => [key, binding.objs[i]]));
 
                 let lastObj = binding.start; //Store reference to element to add new items after.
-                let nextObjs = [];
+                const nextObjs = [];
 
                 nextKeys.forEach((key) => {
                     let obj = null;
 
-                    if (incomingKeys.includes(key)) {
+                    if (incoming.has(key)) {
                         // Add new item.
                         let html = binding.html;
                         html = html.replace(RGX_VARIABLE_ALIAS, `${binding.list}[$${key}__sourceindex$]`);
@@ -819,13 +814,8 @@ class JSBinder
                         counter++;
                     } else {
                         // Reorder existing items if needed.
-                        const index = existingKeys.indexOf(key);
-                        obj = existingObjs[index];
-
-                        if (index > 0) lastObj.after(obj); // If object is not next of existing it needs to be moved to after "lastObj".
-
-                        existingObjs.splice(index, 1); // Removes object from list of old objects (unhandled objects).
-                        existingKeys.splice(index, 1);
+                        obj = existingObjMap.get(key);
+                        if (lastObj.nextElementSibling !== obj) lastObj.after(obj); // If object is not next of existing it needs to be moved to after "lastObj".
                     }
 
                     lastObj = obj;
@@ -891,9 +881,6 @@ class JSBinder
 
         // Generates numeric ranges, filters by where clause, and updates DOM with matching elements.
         refresh = () => {
-            const whereNotIn = (other) => (x) => !other.includes(x);
-            const whereNotNull = (x) => x !== null;
-
             let counter = 0;
 
             this.#bindings.forEach((binding) => {
@@ -905,31 +892,26 @@ class JSBinder
                 // Create list of all keys/numbers to include, filtered by 'where' if defined.
                 const nextKeys = [...function* () { for (let key = from; key <= to; key++) { if (binding.where === null || binder.#evaluate(binding.where.replace(RGX_VARIABLE_ALIAS, key))) yield(key); } }()];
 
-                // Compare keys to know what to add or remove.
-                const outgoingKeys = binding.keys.filter(whereNotIn(nextKeys));
-                const incomingKeys = nextKeys.filter(whereNotIn(binding.keys));
+                const { outgoing, incoming } = JSBinder.#diff(binding.keys, nextKeys);
 
                 // Remove existing items
                 binding.keys.forEach((key, i) => {
-                    if (outgoingKeys.includes(key)) {
+                    if (outgoing.has(key)) {
                         JSBinder.#dispatchEvent(binding.objs[i], JSBinder.#EVENT.FOR, { action: JSBinder.#ACTION.REMOVE }); // Dispatch before removing the element.
                         binding.objs[i].remove();
                         binding.objs[i] = null;
-                        binding.keys[i] = null;
                     }
                 });
 
-                // Filtered lists to not include removed elements
-                let existingKeys = binding.keys.filter(whereNotNull);
-                let existingObjs = binding.objs.filter(whereNotNull);
+                const existingObjMap = new Map(binding.keys.map((key, i) => [key, binding.objs[i]]));
 
                 let lastObj = binding.start; // Store reference to element to add new items after...
-                let nextObjs = [];
+                const nextObjs = [];
 
                 nextKeys.forEach((key) => {
                     let obj = null;
 
-                    if (incomingKeys.includes(key)) {
+                    if (incoming.has(key)) {
                         // Add new item
                         obj = JSBinder.#deserializeHTML(binding.html.replace(RGX_VARIABLE_ALIAS, key));
                         lastObj.after(obj);
@@ -937,8 +919,7 @@ class JSBinder
                         counter++;
                     } else {
                         // Existing items...
-                        const index = existingKeys.indexOf(key);
-                        obj = existingObjs[index];
+                        obj = existingObjMap.get(key);
                     }
                     
                     lastObj = obj;
