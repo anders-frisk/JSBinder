@@ -42,39 +42,61 @@
 class JSBinder
 {
     /**
-     * Creates a new JSBinder instance and attaches it to a root element.
+     * Creates a new JSBinder instance on any "app" or "component" HTML element.
      * 
-     * @param {Object} [options={}] - Configuration options for the JSBinder instance.
-     * @param {HTMLElement} [options.root=document.body] - The root DOM element to bind to. All bindings will be scoped to this element and its descendants.
-     * 
-     * @example
-     * // Bind to document.body (default)
-     * const binder = new JSBinder();
+     * @param {HTMLElement} [root] - The root DOM element to bind to. All bindings will be scoped to this element and its descendants.
      * 
      * @example
-     * // Bind to specific element
-     * const binder = new JSBinder({ root: document.querySelector('#app') });
+     * const binder = new JSBinder(document.querySelector('#app'));
      */
-    constructor(options = {})
+    constructor(root)
     {
-        if (!JSBinder.#isPlainObject(options))
-            throw new Error(JSBinder.#message(`'options' must be an object`));
-
-        this.#settings = { root: document.body, ...options };
+        this.#root = root;
         
-        if (!this.#settings.root)
+        if (!this.#root)
             throw new Error(JSBinder.#message('Can not find the root element'));
 
-        if (this.#settings.root.attributes.hasOwnProperty("data-jsbinder"))
+        if (this.#root.attributes.hasOwnProperty("data-jsbinder"))
             throw new Error(JSBinder.#message('An instance of JSBinder already exists on this root'));
 
-        this.#settings.root.dataset.jsbinder = "";
+        this.#root.dataset.jsbinder = "";
 
         this.#abortController = new AbortController();
+        JSBinder.#removeObserver.watch(this.#root, this);
     };
 
     #abortController;
-    #settings;
+    #root;
+
+    static #removeObserver = class RemoveObserver {
+        static #elements = new Map();
+        static #isObserving = false;
+
+        static #observer = new MutationObserver(() => {
+            for (const [element, instance] of this.#elements) {
+                if (!element.isConnected) {
+                    this.#elements.delete(element);
+                    instance.dispose?.();
+                }
+            }
+            if (this.#elements.size === 0) this.#stop();
+        });
+
+        static watch(element, instance) {
+            this.#elements.set(element, instance);
+            if (!this.#isObserving) this.#start();
+        };
+
+        static #start() {
+            this.#observer.observe(document.documentElement, { childList: true, subtree: true });
+            this.#isObserving = true;
+        };
+
+        static #stop() {
+            this.#observer.disconnect();
+            this.#isObserving = false;
+        };
+    };
 
     static #message = (msg) => `JSBinder: ${msg}`;
     static #error = (msg) => console.error(JSBinder.#message(msg));
@@ -570,9 +592,9 @@ class JSBinder
 
     // Helper function to find directives in the DOM not inside a template or other directive.
     #queryDirectives = (selector) => (callback) => {
-        [...this.#settings.root.querySelectorAll(selector)]
+        [...this.#root.querySelectorAll(selector)]
             .filter((obj) => !["[data-if]", "[data-each]", "[data-for]", "template"].some(x => !!obj.parentNode.closest(x)))
-            .filter((obj) => obj.closest("[data-jsbinder]") === this.#settings.root)
+            .filter((obj) => obj.closest("[data-jsbinder]") === this.#root)
             .forEach((obj) => callback(obj));
     };
 
@@ -620,7 +642,7 @@ class JSBinder
     #ifDirective = ((binder) => new class IfDirective {
         #bindings = [];
 
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Finds and stores data-if elements, replacing them with comment placeholders.
         register = () => {
@@ -684,7 +706,7 @@ class JSBinder
         
         static #RGX_EACH_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)(?:\s*,\s*@([a-zA-Z]{1}[0-9a-zA-Z_]*))?\s+in\s+([a-zA-Z]{1}[0-9a-zA-Z_]*(?:(?:\[.+\]|\.)(?:[a-zA-Z]{1}[0-9a-zA-Z_]*)?)*)$/;
         
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.start.isConnected); };
 
         // Scans for data-each elements, extracts configuration, and stores template HTML with comment markers.
         register = () => {
@@ -738,11 +760,11 @@ class JSBinder
             let counter = 0;
 
             this.#bindings.forEach((binding) => {
-                const skip = binding.skipTree !== null ? binding.skipTree.evaluate() : null;
-                const limit = binding.limitTree !== null ? binding.limitTree.evaluate() : null;
+                const skip = binding.skipTree?.evaluate() ?? null;
+                const limit = binding.limitTree?.evaluate() ?? null;
 
-                const page = binding.pageTree !== null ? binding.pageTree.evaluate() : null;
-                const pagesize = binding.pagesizeTree !== null ? binding.pagesizeTree.evaluate() : null;
+                const page = binding.pageTree?.evaluate() ?? null;
+                const pagesize = binding.pagesizeTree?.evaluate() ?? null;
 
                 const RGX_VARIABLE_ALIAS = JSBinder.#rgxFormatVariable(binding.alias);
                 const RGX_INDEX_ALIAS = !!binding.indexAlias ? JSBinder.#rgxFormatVariable(binding.indexAlias) : null;
@@ -844,7 +866,7 @@ class JSBinder
         
         static #RGX_FOR_DIRECTIVE = /^@([a-zA-Z]{1}[0-9a-zA-Z_]*)$/;
 
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.start)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.start.isConnected); };
 
         // Finds data-for elements with range specifications and stores template HTML with comment markers.
         register = () => {
@@ -954,7 +976,7 @@ class JSBinder
             ATTRIBUTE: "attribute",
         };
         
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Scans text content and attributes for {{...}} expressions, extracting and storing them.
         register = () => {
@@ -1017,7 +1039,7 @@ class JSBinder
                 if (element.nodeType === Node.DOCUMENT_NODE || element.nodeType === Node.ELEMENT_NODE) binder.#iterateChildNodes(element)(x => scanNode(x));
             };
             
-            scanNode(binder.#settings.root);
+            scanNode(binder.#root);
 
             return counter;
         };
@@ -1069,7 +1091,7 @@ class JSBinder
         
         static #getDomDepth = (node) => [...function* (n) { while (n.parentElement) yield (n = n.parentElement); }(node)].length;
         
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Finds data-bind elements and stores their expressions with DOM depth for proper evaluation order.
         register = () => {
@@ -1168,7 +1190,7 @@ class JSBinder
         
         static #RGX_ATTRIBUTE_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
         
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Scans for data-attr directives, parsing attribute:expression mappings.
         register = () => {
@@ -1245,7 +1267,7 @@ class JSBinder
         
         static #RGX_CLASS_DIRECTIVE = /^(['"])([a-zA-Z]{1}[0-9a-zA-Z_-]*)\1\s+:\s+(.+)$/;
         
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Finds data-class directives and parses class:expression mappings.
         register = () => {
@@ -1303,7 +1325,7 @@ class JSBinder
         
         static #toKebabCase = (text) => text.trim().replace(/([a-z])([A-Z])/g, (_, a, b) => `${a}-${b.toLowerCase()}`); // "marginTop" >> "margin-top"
 
-        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => document.body.contains(x.obj)); };
+        #pruneDetached = () => { this.#bindings = this.#bindings.filter((x) => x.obj.isConnected); };
 
         // Scans for data-style directives, parsing CSS property:expression mappings.
         register = () => {
@@ -1522,7 +1544,7 @@ class JSBinder
     #update = new JSBinder.#CoalescedTask(() => {
         if (this.#abortController.signal.aborted) return;
 
-        if (this.#stateUpdated) { this.#stateUpdated = false; JSBinder.#dispatchEvent(this.#settings.root, JSBinder.#EVENT.STATECHANGED); }
+        if (this.#stateUpdated) { this.#stateUpdated = false; JSBinder.#dispatchEvent(this.#root, JSBinder.#EVENT.STATECHANGED); }
         if (this.#registerPending) { this.#registerPending = false; this.#register(); }
         if (this.#refreshPending) { this.#refreshPending = false; this.#refresh(); }
     });
@@ -1539,10 +1561,9 @@ class JSBinder
         if (count > 0) this.#register();
     };
 
-    //ToDo: Add observder to automatically run dispose when root element is removed from dom?
     #dispose = () => {
         this.#abortController.abort();
-        this.#settings.root.removeAttribute("data-jsbinder");
+        this.#root.removeAttribute("data-jsbinder");
         JSBinder.#info("Instance disposed!");
     };
 

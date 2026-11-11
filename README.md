@@ -75,7 +75,7 @@ Create your first reactive application in a few simple steps:
 
 </head>
 <body>
-  <div>
+  <div id="app">
 
     <!-- 2. Prepare the HTML with bindings -->
     <p>Count: {{count}}</p>
@@ -85,7 +85,7 @@ Create your first reactive application in a few simple steps:
   <script>
 
     // 3. Create a JSBinder instance
-    const binder = new JSBinder();
+    const binder = new JSBinder(document.querySelector("#app"));
     
     // 4. Initialize state
     binder.setState({ count: 0 });
@@ -453,6 +453,10 @@ JSBinder also supports direct attribute directives:
 
 ```html
 <input data-disabled="!isValid">
+```
+
+```html
+<div data-hidden="details.hidden === true">...</div>
 ```
 
 **Events:** Triggers `jsbinder-attr` event with `e.detail.key` and `e.detail.value`
@@ -1032,27 +1036,6 @@ binder.addFunction('isEmail', (email) =>
 
 ---
 
-## Options
-
-Instanciating `new JSBinder()` can be made with an optional options parameter.
-
-**Parameters:**
-
-| Name | Type | Required | Description |
-|------|------|----------|-------------|
-| `options` | Object | No | Configuration options |
-| `options.root` | HTMLElement | No | Root element for binding scope (default: `document.body`) |
-
-**Returns:** JSBinder instance
-
-**Example:**
-
-```javascript
-const binder = new JSBinder({ root: document.getElementById("app") });
-```
-
----
-
 ## Events
 
 JSBinder dispatches custom events for all directive updates, enabling fine-grained control and monitoring.
@@ -1082,7 +1065,7 @@ JSBinder dispatches custom events for all directive updates, enabling fine-grain
 
 ```javascript
 // Listen to specific directive updates
-document.body.addEventListener('jsbinder-bind', (e) => {
+document.querySelector("#app").addEventListener('jsbinder-bind', (e) => {
   console.log('Bind updated:', e.target, 'Value:', e.detail.value);
 });
 ```
@@ -1110,7 +1093,7 @@ const planets = [
   { name: "Neptune", diameter: 49244, type: "Ice" }
 ];
 
-const binder = new JSBinder();
+const binder = new JSBinder(document.querySelector("#app"));
 binder.setState({
   planets,
   typeFilter: ""
@@ -1119,7 +1102,7 @@ binder.scan();
 ```
 
 ```html
-<div>
+<div id="#app">
   <label>
     Filter by type:
     <select data-bind="typeFilter" data-onchange="typeFilter = @value">
@@ -1162,7 +1145,7 @@ binder.scan();
 [Live Demo](https://anders-frisk.github.io/jsbinder/demo-table-with-paging.html)
 
 ```javascript
-const binder = new JSBinder();
+const binder = new JSBinder(document.querySelector("#app"));
 
 binder.addFunction('ceil', (x) => Math.ceil(x));
 
@@ -1176,7 +1159,7 @@ binder.scan();
 ```
 
 ```html
-<div>
+<div id="#app">
   <table>
     <thead>
       <tr>
@@ -1277,22 +1260,24 @@ const treeData = [
   }
 ];
 
-const binder = new JSBinder();
+const binder = new JSBinder(document.querySelector("#app"));
 binder.setState({ treeData });
 binder.scan();
 ```
 
 ```html
-<template data-template="tree">
-  <li data-each="@item in @data" data-key="@item.title">
-    <span>{{@item.title}}</span>
-    <ul data-if="@item.items.length > 0" 
-        data-render="tree" 
-        data-source="@item.items"></ul>
-  </li>
-</template>
+<div id="#app">
+  <template data-template="tree">
+    <li data-each="@item in @data" data-key="@item.title">
+      <span>{{@item.title}}</span>
+      <ul data-if="@item.items.length > 0" 
+          data-render="tree" 
+          data-source="@item.items"></ul>
+    </li>
+  </template>
 
-<ul data-render="tree" data-source="treeData"></ul>
+  <ul data-render="tree" data-source="treeData"></ul>
+</div>
 ```
 
 ---
