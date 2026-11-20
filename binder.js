@@ -56,46 +56,31 @@ class JSBinder
         if (!this.#root)
             throw new Error(JSBinder.#message('Can not find the root element'));
 
-        if (this.#root.attributes.hasOwnProperty("data-jsbinder"))
+        if (JSBinder.#instanceObserver.isInstance(this.#root))
             throw new Error(JSBinder.#message('An instance of JSBinder already exists on this root'));
 
-        this.#root.dataset.jsbinder = "";
-
         this.#abortController = new AbortController();
-        JSBinder.#removeObserver.watch(this.#root, this);
+        JSBinder.#instanceObserver.watch(this.#root, this);
     };
 
     #abortController;
     #root;
 
-    static #removeObserver = class RemoveObserver {
+    static #instanceObserver = class InstanceObserver {
         static #elements = new Map();
         static #isObserving = false;
 
-        static #observer = new MutationObserver(() => {
-            for (const [element, instance] of this.#elements) {
-                if (!element.isConnected) {
-                    this.#elements.delete(element);
-                    instance.dispose?.();
-                }
-            }
-            if (this.#elements.size === 0) this.#stop();
-        });
+        static #observer = new MutationObserver(() => { for (const [element, instance] of this.#elements) { if (!element.isConnected) { this.#elements.delete(element); instance.dispose?.(); } } if (this.#elements.size === 0) this.#stop(); });
 
-        static watch(element, instance) {
-            this.#elements.set(element, instance);
-            if (!this.#isObserving) this.#start();
-        };
+        static watch(element, instance) { this.#elements.set(element, instance); if (!this.#isObserving) this.#start(); };
 
-        static #start() {
-            this.#observer.observe(document.documentElement, { childList: true, subtree: true });
-            this.#isObserving = true;
-        };
-
-        static #stop() {
-            this.#observer.disconnect();
-            this.#isObserving = false;
-        };
+        static unwatch(element) { this.#elements.delete(element); if (this.#elements.size === 0) this.#stop(); };
+        
+        static isInstance = (element) => this.#elements.has(element);
+        
+        static #start() { this.#observer.observe(document.documentElement, { childList: true, subtree: true }); this.#isObserving = true; };
+        
+        static #stop() { this.#observer.disconnect(); this.#isObserving = false; };
     };
 
     static #message = (msg) => `JSBinder: ${msg}`;
@@ -166,6 +151,8 @@ class JSBinder
     #state = {};
     #functions = {};
 
+    #stateCache = null;
+
     /**
      * Updates the state object and triggers a refresh of all bindings.
      * Can accept either a plain object or a function that receives the current state and returns updates.
@@ -198,21 +185,32 @@ class JSBinder
         if (!JSBinder.#isPlainObject(data))
             return JSBinder.#error(`'setState' requires an object or a function with a single attribute returning an object as input`);
 
-        const recurse = (state, updates) => {
-            Object.keys(updates)
-                .filter(key => !JSBinder.#BLOCKED_KEYS.includes(key))
-                .forEach((key) => { if (updates[key] === undefined) { delete state[key]; } else { state[key] = JSBinder.#isPlainObject(updates[key]) ? recurse(state[key] || {}, updates[key]) : updates[key]; } });
-            return state;
+        const recurse = (state, update) => {
+            if (JSBinder.#isPlainObject(update)) {
+                Object.keys(update)
+                    .filter(key => !JSBinder.#BLOCKED_KEYS.includes(key))
+                    .filter(key => typeof update[key] !== "function")
+                    .forEach((key) => { if (update[key] === undefined) { delete state[key]; } else { state[key] = recurse(state[key] !== undefined && JSBinder.#isPlainObject(state[key]) ? state[key] : {}, update[key]); }});
+
+                return state;
+            }
+
+            if (Array.isArray(update)) {
+                return update.filter(x => typeof x !== "function").map(x => recurse({}, x));
+            }
+
+            return update;
         };
 
         this.#state = recurse(this.#state, data);
+        this.#stateCache = null;
         this.#stateUpdated = true;
         this.#refreshPending = true;
         this.#update.request();
     };
 
     /**
-     * Returns a deep clone of the current state object.
+     * Returns a (cached) deep clone of the current state object.
      * The returned object is a copy and modifications to it will not affect the actual state.
      * 
      * @returns {Object} A deep clone of the current state.
@@ -226,7 +224,10 @@ class JSBinder
      * const state = binder.getState();
      * state.count = 999; // Does not change the actual state
      */
-    getState = () => JSBinder.#structuredClonePolyfill(this.#state);
+    getState = () => {
+        if (!this.#stateCache) this.#stateCache = JSBinder.#structuredClonePolyfill(this.#state);
+        return this.#stateCache;
+    };
 
     /**
      * Registers a custom function that can be used in data binding expressions.
@@ -303,6 +304,7 @@ class JSBinder
         const target = path.reduce((x, key) => (x === undefined || x[key] === undefined) ? undefined : x[key], this.#state);
         if (target) {
             target[key] = value;
+            this.#stateCache = null;
             this.#stateUpdated = true;
             this.#refreshPending = true;
             this.#update.request();
@@ -515,7 +517,7 @@ class JSBinder
                     Evaluator.#evaluateInfixOperations(data, Evaluator.#infixOperations);
 
                 // Recursive parse tree nodes to values.
-                // ["'string'", "vaiable_eq_1", "true", ...] >> ["string", 1, true, ...]
+                // ["'string'", "variable_eq_1", "true", ...] >> ["string", 1, true, ...]
                 const resolveLiterals = (input) => 
                     input
                         .map((x) => Array.isArray(x) ? resolveLiterals(x) : x)
@@ -569,6 +571,7 @@ class JSBinder
     #evaluate = (expression) => (new JSBinder.#Solver.ExpressionTree(this, expression)).evaluate();
     
 
+    // Enumeration of HTML elements with custom handling in JSBinder
     static #TYPE = {
         CHECKBOX: "checkbox",
         INPUT: "input",
@@ -594,7 +597,7 @@ class JSBinder
     #queryDirectives = (selector) => (callback) => {
         [...this.#root.querySelectorAll(selector)]
             .filter((obj) => !["[data-if]", "[data-each]", "[data-for]", "template"].some(x => !!obj.parentNode.closest(x)))
-            .filter((obj) => obj.closest("[data-jsbinder]") === this.#root)
+            .filter((obj) => obj === this.#root || !JSBinder.#instanceObserver.isInstance(obj))
             .forEach((obj) => callback(obj));
     };
 
@@ -602,10 +605,11 @@ class JSBinder
     #iterateChildNodes = (parent) => (callback) => {
         [...parent.childNodes]
             .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !["[data-if]", "[data-each]", "[data-for]", "template"].some(x => !!obj.matches(x)))
-            .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !obj.matches("[data-jsbinder]"))
+            .filter((obj) => obj.nodeType !== Node.ELEMENT_NODE || !JSBinder.#instanceObserver.isInstance(obj))
             .forEach((obj) => callback(obj));
     };
 
+    // Enumeration of custom JSBinder events
     static #EVENT = {
         IF: "if",
         EACH: "each",
@@ -618,6 +622,7 @@ class JSBinder
         STATECHANGED: "statechanged",
     };
 
+    // Enumeration of actions for JSBinder events
     static #ACTION = {
         ADD: "add",
         REMOVE: "remove",
@@ -1563,7 +1568,7 @@ class JSBinder
 
     #dispose = () => {
         this.#abortController.abort();
-        this.#root.removeAttribute("data-jsbinder");
+        JSBinder.#instanceObserver.unwatch(this.#root);
         JSBinder.#info("Instance disposed!");
     };
 
